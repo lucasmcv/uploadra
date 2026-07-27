@@ -1,0 +1,93 @@
+// Prisma schema for the video-dictation study platform.
+// NOTE: datasource provider is "sqlite" for local dev (zero-install).
+// Switching to Postgres for production is a one-line provider change
+// (see docs/DEPLOYMENT.md) — models intentionally avoid sqlite-only
+// features (e.g. native enums aren't supported on sqlite, so status
+// fields use String with values validated in lib/types.ts).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+
+  videos  Video[]
+  answers Answer[]
+
+  @@map("users")
+}
+
+model Video {
+  id               String   @id @default(uuid())
+  ownerId          String
+  owner            User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title            String
+  originalFilename String
+  storageKey       String
+  mimeType         String
+  durationSeconds  Float?
+  // one of: uploading | transcribing | ready | failed
+  status           String   @default("uploading")
+  errorMessage     String?
+  whisperModel     String?
+  // one of: open | mcq — chosen at upload time, fixed for this video
+  questionMode     String   @default("open")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  segments Segment[]
+
+  @@index([ownerId])
+  @@map("videos")
+}
+
+model Segment {
+  id                 String   @id @default(uuid())
+  videoId            String
+  video              Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  orderIndex         Int
+  startTime          Float
+  endTime            Float
+  transcriptText     String
+  // LLM-generated question whose direct answer is transcriptText; null if
+  // generation failed or hasn't run yet (UI falls back to a generic prompt).
+  question           String?
+  // mcq mode only: JSON-encoded array of 4 option strings, and the index
+  // (0-3) of the option matching transcriptText.
+  options            String?
+  correctOptionIndex Int?
+  createdAt          DateTime @default(now())
+
+  answers Answer[]
+
+  @@unique([videoId, orderIndex])
+  @@index([videoId, startTime])
+  @@map("segments")
+}
+
+model Answer {
+  id                  String    @id @default(uuid())
+  segmentId           String
+  segment             Segment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answerText          String?
+  // mcq mode only: index (0-3) of the option the user picked
+  selectedOptionIndex Int?
+  skipped             Boolean   @default(false)
+  submittedAt         DateTime?
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([segmentId, userId])
+  @@map("answers")
+}

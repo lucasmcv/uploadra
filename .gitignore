@@ -39,3 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/app/generated/prisma
+
+# local dev database + uploads
+# NOTE: DATABASE_URL="file:./dev.db" is resolved relative to process.cwd()
+# by the libsql driver adapter at runtime, which is the repo root for both
+# `npm run dev` and the Prisma CLI here — so the file lives at /dev.db, not
+# /prisma/dev.db.
+/dev.db
+/dev.db-journal
+/data/uploads
+
+# worker
+/worker/__pycache__
+/worker/.venv
+

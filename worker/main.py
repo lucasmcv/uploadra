@@ -1,0 +1,49 @@
+from contextlib import asynccontextmanager
+
+from fastapi import BackgroundTasks, FastAPI
+from pydantic import BaseModel
+
+from callback import post_callback
+from storage_client import resolve_local_path
+from transcription import load_model, transcribe_file
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    load_model()  # warm up once at startup, not per-request
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+class TranscribeRequest(BaseModel):
+    video_id: str
+    storage_key: str
+    callback_url: str
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/transcribe", status_code=202)
+def transcribe(req: TranscribeRequest, background_tasks: BackgroundTasks):
+    background_tasks.add_task(_run_transcription, req)
+    return {"accepted": True}
+
+
+def _run_transcription(req: TranscribeRequest) -> None:
+    try:
+        path = resolve_local_path(req.storage_key)
+        segments = transcribe_file(path)
+        post_callback(
+            req.callback_url,
+            {"video_id": req.video_id, "status": "ready", "segments": segments},
+        )
+    except Exception as exc:  # noqa: BLE001
+        post_callback(
+            req.callback_url,
+            {"video_id": req.video_id, "status": "failed", "error": str(exc)},
+        )
