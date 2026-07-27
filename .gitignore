@@ -54,4 +54,5 @@ next-env.d.ts
 # worker
 /worker/__pycache__
 /worker/.venv
+/worker/worker.log
 
