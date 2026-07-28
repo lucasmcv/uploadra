@@ -100,6 +100,80 @@ export function backfillMissingQuestions(
   }
 }
 
+const VERIFY_OPEN_PROMPT_HEADER = `Actuá como un revisor de control de calidad. Para cada par de fragmento y pregunta ya generados abajo, verificá que la pregunta corresponda de forma adecuada y exclusiva a ESE fragmento — su respuesta directa debe ser el contenido de ese fragmento específico, no el de otro fragmento ni algo genérico que podría aplicar a cualquiera.
+
+- Si la pregunta ya corresponde bien, devolvé el mismo texto tal cual.
+- Si no corresponde bien (es ambigua, encajaría mejor con otro fragmento, es demasiado genérica, o no tiene relación clara con el fragmento), reemplazala por una pregunta nueva que sí corresponda, respetando las mismas reglas de siempre: natural, respondible únicamente con el contenido de ese fragmento específico, nunca debe incluir la respuesta ni siquiera entre paréntesis.
+
+Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string}, uno por cada fragmento recibido, sin texto adicional, sin markdown.
+
+Fragmentos y preguntas a revisar:
+`;
+
+const VERIFY_MCQ_PROMPT_HEADER = `Actuá como un revisor de control de calidad. Para cada fragmento con su pregunta de opción múltiple ya generada abajo, verificá que la opción marcada como correcta corresponda de forma adecuada y exclusiva al contenido de ESE fragmento específico, y que las 4 opciones sigan siendo plausibles entre sí.
+
+- Si ya está bien, devolvé la misma pregunta y opciones tal cual.
+- Si no corresponde bien (la opción "correcta" no coincide con el fragmento, es ambigua, o encajaría mejor con otro fragmento), generá una versión corregida: 4 opciones plausibles (mismo estilo/longitud aproximada), una sola correcta que coincida con ese fragmento específico. La pregunta nunca debe incluir la respuesta, ni siquiera entre paréntesis.
+
+Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string, "options": [string, string, string, string], "correct_index": number}, uno por cada fragmento recibido, sin texto adicional, sin markdown. correct_index es 0-based.
+
+Fragmentos y preguntas a revisar:
+`;
+
+/**
+ * Checkpoint run once after every other question-generation step
+ * (generateQuestions + backfillMissingQuestions) completes: sends every
+ * (fragment, question) pair back to the LLM in a single batched call and
+ * asks it to confirm or correct each one, so a fragment can never end up
+ * paired with a question that actually belongs to a different fragment
+ * (or no fragment at all, in the case of a generic backfilled one that
+ * turns out to have enough content for a real question). Mutates
+ * `questions` in place with whatever the review returns; on any failure
+ * (missing API key, network error, unparseable response) it's a no-op —
+ * the previously generated questions are kept rather than lost.
+ */
+export async function verifyQuestionCorrespondence(
+  fragments: FragmentForQuestion[],
+  questions: Map<number, GeneratedQuestion>,
+  mode: QuestionMode
+): Promise<void> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || fragments.length === 0) return;
+
+  const lines = fragments
+    .map((fragment) => {
+      const q = questions.get(fragment.orderIndex);
+      if (!q) return null;
+      if (mode === "mcq" && q.options) {
+        return `${fragment.orderIndex}: FRAGMENTO: "${fragment.text}" | PREGUNTA ACTUAL: "${q.question}" | OPCIONES: ${JSON.stringify(q.options)} | CORRECTA_ACTUAL: ${q.correctOptionIndex}`;
+      }
+      return `${fragment.orderIndex}: FRAGMENTO: "${fragment.text}" | PREGUNTA ACTUAL: "${q.question}"`;
+    })
+    .filter((line): line is string => line !== null);
+
+  if (lines.length === 0) return;
+
+  const client = new GoogleGenAI({ apiKey });
+  const prompt = (mode === "mcq" ? VERIFY_MCQ_PROMPT_HEADER : VERIFY_OPEN_PROMPT_HEADER) + lines.join("\n");
+
+  try {
+    const response = await client.models.generateContent({
+      model: "gemini-flash-latest",
+      contents: prompt,
+    });
+
+    const reviewed =
+      mode === "mcq" ? parseMcqQuestions(response.text ?? "") : parseOpenQuestions(response.text ?? "");
+
+    for (const [orderIndex, q] of reviewed) {
+      questions.set(orderIndex, q);
+    }
+    stripEmbeddedAnswerParens(questions);
+  } catch (err) {
+    console.error("[questions] Falló el checkpoint de verificación de correspondencia:", err);
+  }
+}
+
 function extractJsonArray(text: string): unknown[] {
   const match = /\[[\s\S]*\]/.exec(text);
   if (!match) return [];

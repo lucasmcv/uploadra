@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { DocumentStatus, QuestionMode } from "@/lib/types";
 import { fragmentLines, type TextFragment } from "@/lib/text-fragmentation";
 import { extractPages, type DocumentSourceFormat } from "@/lib/document-extraction";
-import { backfillMissingQuestions, generateQuestions } from "@/lib/questions";
+import { backfillMissingQuestions, generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
 
 export async function GET() {
   const session = await auth();
@@ -108,6 +108,7 @@ export async function POST(req: NextRequest) {
     const fragmentsForQuestions = fragments.map((f) => ({ orderIndex: f.orderIndex, text: f.text }));
     const questions = await generateQuestions(fragmentsForQuestions, questionMode);
     backfillMissingQuestions(fragmentsForQuestions, questions);
+    await verifyQuestionCorrespondence(fragmentsForQuestions, questions, questionMode);
 
     await prisma.$transaction([
       prisma.fragment.createMany({

@@ -16,7 +16,35 @@ docker compose up -d --build
 ```
 
 Esto levanta: `postgres`, `minio` (+ `minio-init` que crea el bucket
-automáticamente), `worker` y `web`. La app queda en `http://localhost:3000`.
+automáticamente), `redis`, `worker` (API liviana) + `worker-rq` (procesa
+la cola de transcripción) y `web`. La app queda en `http://localhost:3000`.
+
+## Despliegue público (Fly.io) — qué tenés que crear vos
+
+El código y la configuración (`fly.toml`, `worker/fly.toml`) ya están
+preparados, pero el deploy real necesita cuentas que solo vos podés crear
+(altas de cuenta y carga de método de pago — Claude no puede hacer esto
+por vos bajo ninguna circunstancia). Checklist, en orden:
+
+1. **Cuenta de Fly.io** (fly.io/app/sign-up) + método de pago cargado.
+   Después generá un deploy token (`fly tokens create deploy` una vez
+   tengas el CLI instalado) — ese token sí me lo podés pasar como variable
+   de entorno local (mismo patrón que las demás API keys, nunca en el chat)
+   para que pueda correr `fly deploy` por vos.
+2. **Cuenta de AWS** + un bucket S3 nuevo + un usuario IAM con permisos
+   limitados solo a ese bucket (no uses las credenciales root de la
+   cuenta). Las claves de acceso van a `S3_ACCESS_KEY`/`S3_SECRET_KEY`.
+3. **Cuenta de Upstash** (upstash.com) → crear una base Redis → copiar su
+   connection string a `REDIS_URL`.
+4. Postgres gestionado: o el addon de Postgres de Fly.io, o una cuenta de
+   Neon/Supabase — cualquiera de las dos sirve, solo cambia `DATABASE_URL`.
+5. Confirmar en tu dashboard de Stripe que el modo elegido (live, según lo
+   que ya definiste) tiene habilitados los medios de pago que vas a
+   necesitar para usuarios argentinos.
+
+Con esas 4-5 cuentas creadas y sus credenciales en `.env` (nunca en el
+chat), avisame y hago el resto: `fly launch`, `fly secrets set` para cada
+variable, y `fly deploy` de las dos apps (`dictado-web`, `dictado-worker`).
 
 La primera vez, el contenedor `worker` va a descargar los pesos del modelo
 Whisper configurado (`WHISPER_MODEL_SIZE`, default `small`) — quedan

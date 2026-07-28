@@ -1,0 +1,56 @@
+# Fly.io app config for the transcription worker. Two process groups
+# sharing one Docker image (worker/Dockerfile): "api" is the thin FastAPI
+# enqueuer web.ts calls over Fly's private network; "rq" is the process
+# that actually loads Whisper and transcribes — scale ITS count, not api's,
+# for real concurrent transcription. Draft, same caveat as ../fly.toml:
+# reconcile with `fly launch --no-deploy` output rather than trusting this
+# blindly, since it was written without a Fly.io account to verify against.
+
+app = "dictado-worker"
+primary_region = "REGION_AQUI" # same region as dictado-web, for low-latency private networking
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  api = "uvicorn main:app --host 0.0.0.0 --port 8001"
+  rq  = "rq worker transcriptions --url $REDIS_URL"
+
+# api: only reached by dictado-web over the private .internal network, so
+# no public HTTP service needed — omit [http_service] here, or restrict it,
+# depending on how strict you want the network boundary.
+[[services]]
+  processes = ["api"]
+  internal_port = 8001
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 8001
+
+[[vm]]
+  processes = ["api"]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# The RQ workers are what need real RAM — same lesson as the local OOM
+# diagnosis (docs/DEPLOYMENT.md, KNOWN_FIXES in platform_inventory.py):
+# each replica loads its own Whisper model, so undersizing this repeats
+# that crash in the cloud. Start with `fly scale count 1 --process-group rq`
+# and raise once billing/traffic justify more parallel transcriptions.
+[[vm]]
+  processes = ["rq"]
+  memory = "8gb"
+  cpu_kind = "shared"
+  cpus = 2
+
+# Secrets (via `fly secrets set`, shared with dictado-web where applicable):
+#   REDIS_URL, S3_ACCESS_KEY, S3_SECRET_KEY, INTERNAL_CALLBACK_SECRET
+# Non-secret: WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE,
+# MIN_SEGMENT_DURATION, STORAGE_DRIVER, S3_BUCKET, S3_REGION,
+# S3_FORCE_PATH_STYLE — same values as docker-compose.yml's worker-rq
+# service except the S3_* ones, which point at real AWS S3.
+# YT_DLP_COOKIES_FILE needs the cookies file uploaded as a Fly secret file
+# (`fly secrets set YT_DLP_COOKIES_FILE=... ` won't work for file content —
+# use `fly ssh console` to place it, or Fly's secrets-as-files mechanism;
+# confirm current best practice when this step is actually reached).
