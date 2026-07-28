@@ -75,6 +75,24 @@ export function YouTubePlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // The setup effect below only runs once per videoId (see deps) — it must
+  // never close over onReady/onTimeUpdate/onPlay/onPause directly, or it'll
+  // keep calling whatever those props were on first mount forever, ignoring
+  // every prop update after (e.g. toggling "sin pausas" or answers changing).
+  // These refs are updated every render so the effect's closures always
+  // read the latest version via .current.
+  const onReadyRef = useRef(onReady);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onPlayRef = useRef(onPlay);
+  const onPauseRef = useRef(onPause);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+    onTimeUpdateRef.current = onTimeUpdate;
+    onPlayRef.current = onPlay;
+    onPauseRef.current = onPause;
+  });
+
   useEffect(() => {
     let cancelled = false;
     let player: YTPlayerInstance | null = null;
@@ -102,7 +120,7 @@ export function YouTubePlayer({
               play: () => activePlayer.playVideo(),
               pause: () => activePlayer.pauseVideo(),
             };
-            onReady?.(minimalPlayer);
+            onReadyRef.current?.(minimalPlayer);
           },
           onStateChange: (event) => {
             if (pollRef.current) {
@@ -110,10 +128,10 @@ export function YouTubePlayer({
               pollRef.current = null;
             }
             if (event.data === YT_PLAYING) {
-              onPlay?.();
-              pollRef.current = setInterval(() => onTimeUpdate?.(), 250);
+              onPlayRef.current?.();
+              pollRef.current = setInterval(() => onTimeUpdateRef.current?.(), 250);
             } else if (event.data === YT_PAUSED) {
-              onPause?.();
+              onPauseRef.current?.();
             }
           },
         },
@@ -125,7 +143,6 @@ export function YouTubePlayer({
       if (pollRef.current) clearInterval(pollRef.current);
       player?.destroy();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId]);
 
   return <div ref={containerRef} className="w-full aspect-video rounded bg-black" />;
