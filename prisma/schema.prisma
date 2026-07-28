@@ -47,6 +47,9 @@ model Video {
   whisperModel     String?
   // one of: open | mcq — chosen at upload time, fixed for this video
   questionMode     String   @default("open")
+  // user-controlled on/off switch — disabled items are hidden from the
+  // default "Mis videos y audios" list but not deleted.
+  enabled          Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -112,6 +115,9 @@ model Document {
   errorMessage     String?
   // one of: open | mcq — chosen at upload time, fixed for this document
   questionMode     String   @default("open")
+  // user-controlled on/off switch — disabled items are hidden from the
+  // default "Mis documentos" list but not deleted.
+  enabled          Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getStaleFailureMessage } from "@/lib/processing-watchdog";
+import { DocumentList } from "@/components/documents/DocumentList";
 
 export default async function DocumentsPage() {
   const session = await auth();
@@ -8,6 +10,18 @@ export default async function DocumentsPage() {
     where: { ownerId: session!.user.id },
     orderBy: { createdAt: "desc" },
   });
+
+  for (const document of documents) {
+    const staleMessage = getStaleFailureMessage(document.status, document.updatedAt);
+    if (staleMessage) {
+      await prisma.document.update({
+        where: { id: document.id },
+        data: { status: "failed", errorMessage: staleMessage },
+      });
+      document.status = "failed";
+      document.errorMessage = staleMessage;
+    }
+  }
 
   if (documents.length === 0) {
     return (
@@ -21,18 +35,13 @@ export default async function DocumentsPage() {
   }
 
   return (
-    <ul className="flex flex-col gap-3 max-w-2xl">
-      {documents.map((document) => (
-        <li key={document.id} className="border rounded px-4 py-3 flex items-center justify-between">
-          <div>
-            <p className="font-medium">{document.title}</p>
-            <p className="text-sm text-gray-500">{document.status}</p>
-          </div>
-          <Link href={`/documents/${document.id}`} className="underline text-sm">
-            Ver
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <DocumentList
+      documents={documents.map((d) => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
+        enabled: d.enabled,
+      }))}
+    />
   );
 }

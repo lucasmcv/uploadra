@@ -10,7 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="border-b flex items-center justify-between px-6 py-3">
         <nav className="flex items-center gap-4">
           <Link href="/videos" className="font-semibold">
-            Mis videos
+            Mis videos y audios
           </Link>
           <Link href="/upload" className="text-sm underline">
             Subir video
