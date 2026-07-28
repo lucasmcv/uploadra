@@ -92,10 +92,6 @@ Sin cambios de código, solo de configuración:
 
 ## Límites conocidos del MVP
 
-- El worker procesa una transcripción a la vez (sin cola de trabajos ni
-  reintentos automáticos más allá del callback). Para más volumen, reemplazar
-  `BackgroundTasks` por una cola real (ej. Redis + RQ/Celery) sin cambiar el
-  contrato HTTP (`POST /transcribe` + webhook de callback).
 - Sin compartir videos entre usuarios, sin edición de transcripciones, sin
   notificación por websocket (se usa polling).
 - YouTube bloquea frecuentemente las descargas automatizadas de audio desde
@@ -103,9 +99,20 @@ Sin cambios de código, solo de configuración:
   runtime de JS (`deno`) incluido en el worker. Cuando pasa, ese video
   específico falla la transcripción; el resto de la app no se ve afectado.
   Mitigación documentada en `worker/README.md` (`YT_DLP_COOKIES_FILE`).
-- Si el proceso del worker se reinicia/recrea mientras una transcripción
-  está en curso (ej. `docker compose up --build worker` con un job
-  pendiente), ese video queda trabado en `transcribing` para siempre — no
-  hay persistencia de jobs en memoria (`BackgroundTasks`). Mismo límite que
-  el de "una transcripción a la vez" de arriba; la solución es la misma
-  (cola real con reintentos).
+- Si `getStaleFailureMessage` (`lib/processing-watchdog.ts`) no llega a
+  detectar un job colgado a tiempo (ventanas configuradas: 5 min subida,
+  20 min transcripción, 10 min procesamiento de documentos), ese video o
+  documento queda como "en curso" más de lo esperado hasta que el próximo
+  polling lo marque `failed`.
+
+## Concurrencia del worker (Redis + RQ)
+
+Desde que se agregó `redis` + `rq` (ver `worker/README.md`), el worker ya
+**no** procesa una transcripción a la vez: la API (`worker/main.py`) solo
+encola el job, y uno o más procesos `rq worker` (servicio `worker-rq` en
+`docker-compose.yml`) lo toman de la cola y transcriben en paralelo entre
+sí. Cada réplica de `worker-rq` carga su propia instancia de Whisper, así
+que la memoria necesaria crece linealmente con la cantidad de réplicas —
+dimensionar cada una con al menos la misma RAM que ya hizo falta
+localmente (ver más abajo). Escalar réplicas localmente:
+`docker compose up -d --scale worker-rq=3`.

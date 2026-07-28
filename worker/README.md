@@ -1,4 +1,16 @@
-# Worker de transcripción (FastAPI + faster-whisper)
+# Worker de transcripción (FastAPI + faster-whisper + RQ)
+
+Dos procesos separados, ambos desde el mismo código (`worker/`):
+
+1. **API** (`main.py`, `uvicorn main:app`): recibe `POST /transcribe`, encola
+   el job en Redis y responde `202` al instante. No carga Whisper.
+2. **Worker RQ** (`rq worker transcriptions --url $REDIS_URL`): toma jobs de
+   la cola y hace la transcripción real (`jobs.py` → `transcription.py`).
+   Cada proceso de este tipo carga su propia instancia de `WhisperModel` —
+   correr varias réplicas es lo que permite transcribir en paralelo para
+   distintos usuarios sin que se pisen entre sí ni se maten por falta de
+   memoria (ver `docker-compose.yml`, servicio `worker-rq`, y
+   `docker compose up -d --scale worker-rq=N` para correr N réplicas).
 
 ## Setup local
 
@@ -8,15 +20,25 @@ python -m venv .venv
 ./.venv/Scripts/pip install -r requirements.txt
 ```
 
+Necesita un Redis corriendo (`docker compose up -d redis`, o uno local).
+
 ## Correr
 
-Debe ejecutarse desde `worker/` (así `LOCAL_STORAGE_DIR` relativo apunta a `../data/uploads`):
+Debe ejecutarse desde `worker/` (así `LOCAL_STORAGE_DIR` relativo apunta a `../data/uploads`).
 
+En una terminal, la API:
+```bash
+REDIS_URL="redis://localhost:6379/0" \
+./.venv/Scripts/python -m uvicorn main:app --port 8001
+```
+
+En otra, al menos un worker RQ (el que realmente transcribe):
 ```bash
 WHISPER_MODEL_SIZE=small \
 LOCAL_STORAGE_DIR="../data/uploads" \
+REDIS_URL="redis://localhost:6379/0" \
 INTERNAL_CALLBACK_SECRET="<mismo valor que .env de la app>" \
-./.venv/Scripts/python -m uvicorn main:app --port 8001
+./.venv/Scripts/python -m rq worker transcriptions --url redis://localhost:6379/0
 ```
 
 La primera vez descarga los pesos del modelo Whisper elegido desde Hugging Face
@@ -24,14 +46,15 @@ La primera vez descarga los pesos del modelo Whisper elegido desde Hugging Face
 
 ## Variables de entorno
 
-- `WHISPER_MODEL_SIZE`: tiny | base | small | medium | large-v3 (default `small`)
+- `REDIS_URL`: conexión a Redis (default `redis://localhost:6379/0`) — la API la usa para encolar, el worker RQ para tomar jobs.
+- `WHISPER_MODEL_SIZE`: tiny | base | small | medium | large-v3 (default `small`) — solo importa para el worker RQ.
 - `WHISPER_DEVICE`: `auto` | `cpu` | `cuda` (default `auto`)
 - `WHISPER_COMPUTE_TYPE`: default `int8` (bueno para CPU)
 - `STORAGE_DRIVER`: `local` (default, comparte disco con la app Next.js) | `s3`
 - `LOCAL_STORAGE_DIR`: debe apuntar al mismo directorio que `LOCAL_STORAGE_DIR` de la app
 - `S3_*`: solo si `STORAGE_DRIVER=s3` (mismos valores que la app)
 - `INTERNAL_CALLBACK_SECRET`: debe coincidir con el de la app Next.js
-- `YT_DLP_COOKIES_FILE`: opcional, ver más abajo
+- `YT_DLP_COOKIES_FILE`: opcional, ver más abajo — solo lo necesita el worker RQ (es quien corre yt-dlp)
 
 ## Videos de YouTube
 

@@ -1,22 +1,17 @@
-from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import FastAPI
 from pydantic import BaseModel
+from redis import Redis
+from rq import Queue
 
-from callback import post_callback
-from storage_client import resolve_local_path
-from transcription import load_model, transcribe_file
-from youtube_ingest import delete_transient_audio, download_audio_transiently
+from config import settings
+from jobs import run_transcription_job
 
+app = FastAPI()
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    load_model()  # warm up once at startup, not per-request
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+_redis = Redis.from_url(settings.redis_url)
+_queue = Queue("transcriptions", connection=_redis)
 
 
 class TranscribeRequest(BaseModel):
@@ -32,32 +27,10 @@ def health():
 
 
 @app.post("/transcribe", status_code=202)
-def transcribe(req: TranscribeRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(_run_transcription, req)
+def transcribe(req: TranscribeRequest):
+    # This process only enqueues — the actual transcription (and its
+    # WhisperModel memory footprint) lives in separate "rq worker"
+    # processes, so N concurrent uploads never contend for one shared
+    # model instance the way the old BackgroundTasks dispatch did.
+    _queue.enqueue(run_transcription_job, req.model_dump())
     return {"accepted": True}
-
-
-def _run_transcription(req: TranscribeRequest) -> None:
-    transient_audio_path: Optional[str] = None
-    try:
-        if req.youtube_video_id:
-            transient_audio_path = download_audio_transiently(req.youtube_video_id)
-            path = transient_audio_path
-        elif req.storage_key:
-            path = resolve_local_path(req.storage_key)
-        else:
-            raise ValueError("Se necesita storage_key o youtube_video_id")
-
-        segments = transcribe_file(path)
-        post_callback(
-            req.callback_url,
-            {"video_id": req.video_id, "status": "ready", "segments": segments},
-        )
-    except Exception as exc:  # noqa: BLE001
-        post_callback(
-            req.callback_url,
-            {"video_id": req.video_id, "status": "failed", "error": str(exc)},
-        )
-    finally:
-        if transient_audio_path:
-            delete_transient_audio(transient_audio_path)

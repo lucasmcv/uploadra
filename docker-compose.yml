@@ -45,16 +45,47 @@ services:
       mc mb -p local/videos
       "
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Thin FastAPI process: accepts POST /transcribe and enqueues a job, does
+  # NOT load Whisper itself. This is what `web` calls over HTTP.
   worker:
     build: ./worker
     restart: unless-stopped
     depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8001:8001"
+
+  # Runs the actual transcription jobs pulled from the Redis queue — a
+  # separate process (and, on a real deploy, separate replicas) from the
+  # `worker` API above so concurrent uploads no longer contend for one
+  # shared WhisperModel instance the way the old BackgroundTasks dispatch
+  # did. Scale locally with `docker compose up -d --scale worker-rq=3`.
+  worker-rq:
+    build: ./worker
+    restart: unless-stopped
+    command: rq worker transcriptions --url redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
       minio:
         condition: service_healthy
     environment:
       WHISPER_MODEL_SIZE: small
       WHISPER_DEVICE: auto
       WHISPER_COMPUTE_TYPE: int8
+      MIN_SEGMENT_DURATION: "12"
       STORAGE_DRIVER: s3
       S3_ENDPOINT: http://minio:9000
       S3_BUCKET: videos
@@ -62,6 +93,7 @@ services:
       S3_SECRET_KEY: minioadmin
       S3_REGION: us-east-1
       S3_FORCE_PATH_STYLE: "true"
+      REDIS_URL: redis://redis:6379/0
       INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
       # Optional. YouTube often blocks server IPs with a bot-check even
       # with a JS runtime present — set this to a path (inside the
@@ -71,8 +103,6 @@ services:
       # See worker/README.md. Empty/unset just means YouTube videos may
       # fail to transcribe; nothing else in the app depends on this.
       YT_DLP_COOKIES_FILE: /run/secrets/yt-cookies.txt
-    ports:
-      - "8001:8001"
     volumes:
       - whisper-model-cache:/root/.cache/huggingface
       # Dedicated YouTube account's exported session cookies (see

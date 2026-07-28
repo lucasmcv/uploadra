@@ -19,6 +19,13 @@ class Settings:
     port: int = int(os.environ.get("WORKER_PORT", "8001"))
     callback_secret: str = os.environ.get("INTERNAL_CALLBACK_SECRET", "")
 
+    # Redis Queue connection — the API process (main.py) only enqueues jobs
+    # here; one or more separate "rq worker" processes (see worker/README.md)
+    # pull from this queue and do the actual transcription. Each such
+    # process loads its own WhisperModel instance, so RAM scales with
+    # concurrent replica count, not with concurrent HTTP requests.
+    redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
     # Optional: path to a Netscape-format cookies.txt exported from a real
     # logged-in browser session. YouTube increasingly blocks yt-dlp with a
     # "Sign in to confirm you're not a bot" / PO Token error for

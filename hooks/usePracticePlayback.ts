@@ -14,11 +14,27 @@ export interface PracticeSegment {
   correctOptionIndex: number | null;
 }
 
-function findActiveIndex(segments: PracticeSegment[], time: number): number | null {
-  for (let i = segments.length - 1; i >= 0; i--) {
-    if (time >= segments[i].startTime) return i;
+// Picks the earliest reached-but-unanswered segment, not simply "whichever
+// segment currentTime is inside right now". With auto-pause on, these
+// coincide anyway (playback halts the moment an unanswered segment is
+// reached, so time never runs ahead of it). With "sin pausas" on, playback
+// keeps going regardless of whether the user has answered — without this,
+// the active segment (and its question card) would jump forward the moment
+// time crosses into the next segment, discarding whatever the user was
+// mid-typing for the one they hadn't answered yet. Falls back to the latest
+// reached segment once everything reached so far has been answered.
+function findActiveIndex(
+  segments: PracticeSegment[],
+  time: number,
+  answers: Record<string, AnswerState>
+): number | null {
+  let lastReached: number | null = null;
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].startTime > time) break;
+    lastReached = i;
+    if (!answers[segments[i].id]) return i;
   }
-  return null;
+  return lastReached;
 }
 
 function postAnswer(segmentId: string, body: Record<string, unknown>): Promise<Response> {
@@ -42,7 +58,7 @@ export function usePracticePlayback(
     const video = videoRef.current;
     if (!video) return;
 
-    const idx = findActiveIndex(segments, video.currentTime);
+    const idx = findActiveIndex(segments, video.currentTime, answers);
     if (idx === null) return;
 
     setActiveIndex(idx);
