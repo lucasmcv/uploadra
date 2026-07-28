@@ -15,6 +15,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/upload" className="text-sm underline">
             Subir video
           </Link>
+          <Link href="/documents" className="font-semibold">
+            Mis documentos
+          </Link>
+          <Link href="/documents/upload" className="text-sm underline">
+            Subir documento
+          </Link>
         </nav>
         <div className="flex items-center gap-3 text-sm text-gray-600">
           {session?.user?.email && <span>{session.user.email}</span>}

@@ -1,4 +1,5 @@
 import { useCallback, useState, type RefObject } from "react";
+import type { MinimalPlayer } from "@/lib/types";
 
 export interface TimedSegment {
   startTime: number;
@@ -7,7 +8,7 @@ export interface TimedSegment {
 
 export function useSegmentSync<T extends TimedSegment>(
   segments: T[],
-  videoRef: RefObject<HTMLVideoElement | null>
+  videoRef: RefObject<MinimalPlayer | null>
 ) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 

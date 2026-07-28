@@ -57,7 +57,8 @@ export default async function PracticePage({
     <div className="max-w-4xl">
       <h1 className="text-xl font-semibold mb-4">{video.title} — Práctica</h1>
       <PracticePlayer
-        videoSrc={`/api/videos/${id}/stream`}
+        videoSrc={video.sourceType === "youtube" ? undefined : `/api/videos/${id}/stream`}
+        youtubeVideoId={video.sourceType === "youtube" ? (video.youtubeVideoId ?? undefined) : undefined}
         segments={segments}
         initialAnswers={initialAnswers}
       />

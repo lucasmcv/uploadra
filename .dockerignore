@@ -1,0 +1,26 @@
+.git
+node_modules
+.next
+out
+build
+
+# secrets — never bake these into an image
+.env
+.env.*
+!.env.example
+
+# local dev artifacts
+/dev.db
+/dev.db-journal
+/data/uploads
+/app/generated/prisma
+
+# python worker (has its own Dockerfile/context)
+/worker/.venv
+/worker/__pycache__
+/worker/worker.log
+
+# editor/tool metadata
+.claude
+.agents
+.windsurf

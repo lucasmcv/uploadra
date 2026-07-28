@@ -3,3 +3,7 @@ uvicorn[standard]==0.34.0
 faster-whisper==1.1.1
 boto3==1.35.90
 requests==2.32.3
+# Deliberately unpinned: YouTube frequently changes its site in ways that
+# break older yt-dlp releases, so this needs to track upstream's latest
+# rather than a fixed version like the rest of this file.
+yt-dlp

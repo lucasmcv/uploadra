@@ -2,8 +2,10 @@
 
 import { useRef } from "react";
 import { VideoPlayer } from "./VideoPlayer";
+import { YouTubePlayer } from "./YouTubePlayer";
 import { SegmentOverlay } from "./SegmentOverlay";
 import { useSegmentSync } from "@/hooks/useSegmentSync";
+import type { MinimalPlayer } from "@/lib/types";
 
 export interface ReviewSegment {
   id: string;
@@ -19,19 +21,38 @@ export interface ReviewSegment {
 
 export function ReviewPlayer({
   videoSrc,
+  youtubeVideoId,
   segments,
 }: {
-  videoSrc: string;
+  videoSrc?: string;
+  youtubeVideoId?: string;
   segments: ReviewSegment[];
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<MinimalPlayer | null>(null);
   const { activeIndex, handleTimeUpdate } = useSegmentSync(segments, videoRef);
 
   const activeSegment = activeIndex !== null ? segments[activeIndex] : null;
 
   return (
     <div className="relative max-w-2xl">
-      <VideoPlayer ref={videoRef} src={videoSrc} controls onTimeUpdate={handleTimeUpdate} />
+      {youtubeVideoId ? (
+        <YouTubePlayer
+          videoId={youtubeVideoId}
+          onReady={(player) => {
+            videoRef.current = player;
+          }}
+          onTimeUpdate={handleTimeUpdate}
+        />
+      ) : (
+        <VideoPlayer
+          ref={(el) => {
+            videoRef.current = el;
+          }}
+          src={videoSrc!}
+          controls
+          onTimeUpdate={handleTimeUpdate}
+        />
+      )}
       {activeSegment && (
         <SegmentOverlay
           position="bottom"

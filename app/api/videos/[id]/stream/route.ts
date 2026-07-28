@@ -16,6 +16,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "No encontrado." }, { status: 404 });
   }
 
+  if (!video.storageKey || !video.mimeType) {
+    return NextResponse.json(
+      { error: "Este video no tiene un archivo propio (fuente externa, ej. YouTube)." },
+      { status: 400 }
+    );
+  }
+
   const storage = getStorageDriver();
 
   const presignedUrl = await storage.getPresignedGetUrl(video.storageKey);

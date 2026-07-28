@@ -1,9 +1,7 @@
 // Prisma schema for the video-dictation study platform.
-// NOTE: datasource provider is "sqlite" for local dev (zero-install).
-// Switching to Postgres for production is a one-line provider change
-// (see docs/DEPLOYMENT.md) — models intentionally avoid sqlite-only
-// features (e.g. native enums aren't supported on sqlite, so status
-// fields use String with values validated in lib/types.ts).
+// NOTE: status/mode fields use plain String (not Prisma enum) with values
+// validated in lib/types.ts — a holdover from when this ran on SQLite
+// (no native enum support there), kept for consistency now on Postgres.
 
 generator client {
   provider = "prisma-client"
@@ -11,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model User {
@@ -21,8 +19,10 @@ model User {
   name         String?
   createdAt    DateTime @default(now())
 
-  videos  Video[]
-  answers Answer[]
+  videos     Video[]
+  answers    Answer[]
+  documents  Document[]
+  docAnswers DocAnswer[]
 
   @@map("users")
 }
@@ -32,9 +32,14 @@ model Video {
   ownerId          String
   owner            User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   title            String
-  originalFilename String
-  storageKey       String
-  mimeType         String
+  // one of: upload | youtube
+  sourceType       String   @default("upload")
+  originalFilename String?
+  // upload only — null for sourceType="youtube"
+  storageKey       String?
+  mimeType         String?
+  // youtube only — the 11-char video id, null for sourceType="upload"
+  youtubeVideoId   String?
   durationSeconds  Float?
   // one of: uploading | transcribing | ready | failed
   status           String   @default("uploading")
@@ -90,4 +95,67 @@ model Answer {
 
   @@unique([segmentId, userId])
   @@map("answers")
+}
+
+model Document {
+  id               String   @id @default(uuid())
+  ownerId          String
+  owner            User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title            String
+  originalFilename String
+  // v1 only supports "txt"; kept as a string for the same reason as
+  // Video.status/questionMode — future formats (pdf, docx) add values here.
+  sourceFormat     String   @default("txt")
+  rawText          String
+  // one of: processing | ready | failed
+  status           String   @default("processing")
+  errorMessage     String?
+  // one of: open | mcq — chosen at upload time, fixed for this document
+  questionMode     String   @default("open")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  fragments Fragment[]
+
+  @@index([ownerId])
+  @@map("documents")
+}
+
+model Fragment {
+  id                 String   @id @default(uuid())
+  documentId         String
+  document           Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  orderIndex         Int
+  // Always 1 for "txt" in v1 (plain text has no real page concept — see
+  // docs/DEPLOYMENT.md and scripts/pending_features/text_document_questions.py
+  // for the per-format page convention this will need once pdf/docx land).
+  page               Int
+  lineStart          Int
+  lineEnd            Int
+  text               String
+  question           String?
+  options            String?
+  correctOptionIndex Int?
+  createdAt          DateTime @default(now())
+
+  answers DocAnswer[]
+
+  @@unique([documentId, orderIndex])
+  @@map("fragments")
+}
+
+model DocAnswer {
+  id                  String    @id @default(uuid())
+  fragmentId          String
+  fragment            Fragment  @relation(fields: [fragmentId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answerText          String?
+  selectedOptionIndex Int?
+  skipped             Boolean   @default(false)
+  submittedAt         DateTime?
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([fragmentId, userId])
+  @@map("doc_answers")
 }

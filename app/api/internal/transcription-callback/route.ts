@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { VideoStatus } from "@/lib/types";
-import { generateQuestions } from "@/lib/questions";
+import { backfillMissingQuestions, generateQuestions } from "@/lib/questions";
 
 interface SegmentPayload {
   order_index: number;
@@ -44,10 +44,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const questions = await generateQuestions(
-    (segments ?? []).map((s) => ({ orderIndex: s.order_index, transcriptText: s.transcript_text })),
-    video.questionMode as "open" | "mcq"
-  );
+  const fragmentsForQuestions = (segments ?? []).map((s) => ({
+    orderIndex: s.order_index,
+    text: s.transcript_text,
+  }));
+  const questions = await generateQuestions(fragmentsForQuestions, video.questionMode as "open" | "mcq");
+  backfillMissingQuestions(fragmentsForQuestions, questions);
 
   await prisma.$transaction([
     prisma.segment.deleteMany({ where: { videoId: video_id } }),

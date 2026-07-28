@@ -53,7 +53,11 @@ export default async function ReviewPage({
   return (
     <div>
       <h1 className="text-xl font-semibold mb-4">{video.title} — Repaso</h1>
-      <ReviewPlayer videoSrc={`/api/videos/${id}/stream`} segments={segments} />
+      <ReviewPlayer
+        videoSrc={video.sourceType === "youtube" ? undefined : `/api/videos/${id}/stream`}
+        youtubeVideoId={video.sourceType === "youtube" ? (video.youtubeVideoId ?? undefined) : undefined}
+        segments={segments}
+      />
     </div>
   );
 }

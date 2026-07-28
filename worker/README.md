@@ -31,3 +31,33 @@ La primera vez descarga los pesos del modelo Whisper elegido desde Hugging Face
 - `LOCAL_STORAGE_DIR`: debe apuntar al mismo directorio que `LOCAL_STORAGE_DIR` de la app
 - `S3_*`: solo si `STORAGE_DRIVER=s3` (mismos valores que la app)
 - `INTERNAL_CALLBACK_SECRET`: debe coincidir con el de la app Next.js
+- `YT_DLP_COOKIES_FILE`: opcional, ver más abajo
+
+## Videos de YouTube
+
+Cuando un video viene de un link de YouTube (en vez de un archivo subido), el
+worker usa `yt-dlp` para bajar **solo el audio, de forma transitoria** (se
+borra apenas termina la transcripción) — nunca se descarga ni se re-aloja el
+video/audio de forma permanente. La reproducción en la app usa el reproductor
+oficial embebido de YouTube (IFrame API), no este archivo.
+
+**Limitación conocida:** YouTube bloquea cada vez más las descargas
+automatizadas desde IPs de servidor/datacenter con un error de tipo
+"Sign in to confirm you're not a bot" (PO Token), incluso con un runtime de
+JavaScript disponible (el worker incluye `deno` para esto). Cuando pasa, la
+transcripción de ese video falla con ese mensaje de error — el resto de la
+app (subida de archivos, documentos de texto) no se ve afectado.
+
+Mitigación (recomendada por el propio yt-dlp): exportar las cookies de una
+sesión real y logueada de YouTube desde tu navegador a un archivo
+`cookies.txt` (formato Netscape — hay extensiones de navegador para esto,
+ej. "Get cookies.txt LOCALLY"), montarlo en el contenedor del worker, y
+apuntar `YT_DLP_COOKIES_FILE` a esa ruta. Ejemplo en `docker-compose.yml`:
+
+```yaml
+worker:
+  environment:
+    YT_DLP_COOKIES_FILE: /run/secrets/yt-cookies.txt
+  volumes:
+    - ./yt-cookies.txt:/run/secrets/yt-cookies.txt:ro
+```

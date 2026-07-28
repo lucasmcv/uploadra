@@ -1,4 +1,7 @@
 import { useCallback, useState, type RefObject } from "react";
+import type { AnswerState, MinimalPlayer } from "@/lib/types";
+
+export type { AnswerState };
 
 export interface PracticeSegment {
   id: string;
@@ -11,12 +14,6 @@ export interface PracticeSegment {
   correctOptionIndex: number | null;
 }
 
-export interface AnswerState {
-  answerText: string | null;
-  selectedOptionIndex: number | null;
-  skipped: boolean;
-}
-
 function findActiveIndex(segments: PracticeSegment[], time: number): number | null {
   for (let i = segments.length - 1; i >= 0; i--) {
     if (time >= segments[i].startTime) return i;
@@ -27,7 +24,7 @@ function findActiveIndex(segments: PracticeSegment[], time: number): number | nu
 export function usePracticePlayback(
   segments: PracticeSegment[],
   initialAnswers: Record<string, AnswerState>,
-  videoRef: RefObject<HTMLVideoElement | null>
+  videoRef: RefObject<MinimalPlayer | null>
 ) {
   const [answers, setAnswers] = useState<Record<string, AnswerState>>(initialAnswers);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);

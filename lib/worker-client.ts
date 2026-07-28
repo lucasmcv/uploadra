@@ -1,4 +1,12 @@
-export async function triggerTranscription(videoId: string, storageKey: string): Promise<void> {
+interface TriggerTranscriptionSource {
+  storageKey?: string;
+  youtubeVideoId?: string;
+}
+
+export async function triggerTranscription(
+  videoId: string,
+  source: TriggerTranscriptionSource
+): Promise<void> {
   const workerUrl = process.env.WORKER_URL ?? "http://localhost:8001";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -7,7 +15,8 @@ export async function triggerTranscription(videoId: string, storageKey: string):
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       video_id: videoId,
-      storage_key: storageKey,
+      storage_key: source.storageKey,
+      youtube_video_id: source.youtubeVideoId,
       callback_url: `${appUrl}/api/internal/transcription-callback`,
     }),
   });

@@ -13,5 +13,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/videos/:path*", "/upload/:path*"],
+  matcher: ["/videos/:path*", "/upload/:path*", "/documents/:path*"],
 };

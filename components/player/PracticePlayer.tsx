@@ -2,20 +2,24 @@
 
 import { useRef, useState } from "react";
 import { VideoPlayer } from "./VideoPlayer";
+import { YouTubePlayer } from "./YouTubePlayer";
 import { PracticeOverlay } from "./PracticeOverlay";
 import { SegmentProgressList } from "./SegmentProgressList";
 import { usePracticePlayback, type AnswerState, type PracticeSegment } from "@/hooks/usePracticePlayback";
+import type { MinimalPlayer } from "@/lib/types";
 
 export function PracticePlayer({
   videoSrc,
+  youtubeVideoId,
   segments,
   initialAnswers,
 }: {
-  videoSrc: string;
+  videoSrc?: string;
+  youtubeVideoId?: string;
   segments: PracticeSegment[];
   initialAnswers: Record<string, AnswerState>;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<MinimalPlayer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const {
     answers,
@@ -32,23 +36,37 @@ export function PracticePlayer({
   const activeSegment = activeIndex !== null ? segments[activeIndex] : null;
 
   function togglePlay() {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) video.play();
-    else video.pause();
+    const player = videoRef.current;
+    if (!player) return;
+    if (player.paused) player.play();
+    else player.pause();
   }
 
   return (
     <div className="flex flex-col md:flex-row gap-6">
       <div className="flex-1">
         <div className="relative">
-          <VideoPlayer
-            ref={videoRef}
-            src={videoSrc}
-            onTimeUpdate={handleTimeUpdate}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-          />
+          {youtubeVideoId ? (
+            <YouTubePlayer
+              videoId={youtubeVideoId}
+              onReady={(player) => {
+                videoRef.current = player;
+              }}
+              onTimeUpdate={handleTimeUpdate}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+            />
+          ) : (
+            <VideoPlayer
+              ref={(el) => {
+                videoRef.current = el;
+              }}
+              src={videoSrc!}
+              onTimeUpdate={handleTimeUpdate}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+            />
+          )}
           {activeSegment && (
             <PracticeOverlay
               key={activeSegment.id}

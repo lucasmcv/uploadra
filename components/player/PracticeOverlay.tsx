@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { AnswerState, PracticeSegment } from "@/hooks/usePracticePlayback";
-
-const OPTION_LETTERS = ["A", "B", "C", "D"];
+import type { AnswerState, QuestionLike } from "@/lib/types";
+import { QuestionCard } from "./QuestionCard";
 
 export function PracticeOverlay({
   position = "bottom",
@@ -15,7 +13,7 @@ export function PracticeOverlay({
   onEditAnswer,
 }: {
   position?: "top" | "bottom";
-  segment: PracticeSegment;
+  segment: QuestionLike;
   answer: AnswerState | undefined;
   onSubmitOpen: (text: string) => void;
   onSelectOption: (index: number) => void;
@@ -23,133 +21,16 @@ export function PracticeOverlay({
   onEditAnswer: (text: string) => void;
 }) {
   const positionClass = position === "top" ? "top-4" : "bottom-4";
-  const isAnswered = Boolean(answer) && !answer!.skipped;
-  const isMcq = segment.options !== null;
 
   return (
-    <div
-      className={`absolute left-4 right-4 ${positionClass} bg-white text-black rounded p-3 shadow-lg flex flex-col gap-2`}
-    >
-      <p className="text-sm font-medium">{segment.question ?? "Escribí lo que escuchaste:"}</p>
-      {isMcq ? (
-        <McqBody
-          segment={segment}
-          answer={answer}
-          isAnswered={isAnswered}
-          onSelectOption={onSelectOption}
-          onSkip={onSkip}
-        />
-      ) : (
-        <OpenBody
-          answer={answer}
-          isAnswered={isAnswered}
-          onSubmitOpen={onSubmitOpen}
-          onSkip={onSkip}
-          onEditAnswer={onEditAnswer}
-        />
-      )}
-    </div>
-  );
-}
-
-function OpenBody({
-  answer,
-  isAnswered,
-  onSubmitOpen,
-  onSkip,
-  onEditAnswer,
-}: {
-  answer: AnswerState | undefined;
-  isAnswered: boolean;
-  onSubmitOpen: (text: string) => void;
-  onSkip: () => void;
-  onEditAnswer: (text: string) => void;
-}) {
-  const [value, setValue] = useState(answer?.answerText ?? "");
-
-  if (isAnswered) {
-    return (
-      <textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => {
-          if (value !== answer?.answerText) onEditAnswer(value);
-        }}
-        className="border rounded px-2 py-1 text-sm"
-        rows={2}
-      />
-    );
-  }
-
-  return (
-    <>
-      <textarea
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        className="border rounded px-2 py-1 text-sm"
-        rows={2}
-      />
-      <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onSkip} className="text-sm border rounded px-3 py-1">
-          Saltar por ahora
-        </button>
-        <button
-          type="button"
-          onClick={() => onSubmitOpen(value)}
-          className="text-sm bg-black text-white rounded px-3 py-1"
-        >
-          Continuar
-        </button>
-      </div>
-    </>
-  );
-}
-
-function McqBody({
-  segment,
-  answer,
-  isAnswered,
-  onSelectOption,
-  onSkip,
-}: {
-  segment: PracticeSegment;
-  answer: AnswerState | undefined;
-  isAnswered: boolean;
-  onSelectOption: (index: number) => void;
-  onSkip: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      {(segment.options ?? []).map((option, index) => {
-        let className = "text-left border rounded px-3 py-2 text-sm";
-        if (isAnswered) {
-          if (index === segment.correctOptionIndex) {
-            className += " bg-green-100 border-green-600";
-          } else if (index === answer?.selectedOptionIndex) {
-            className += " bg-red-100 border-red-600";
-          }
-        }
-        return (
-          <button
-            key={index}
-            type="button"
-            disabled={isAnswered}
-            onClick={() => onSelectOption(index)}
-            className={className}
-          >
-            <span className="font-semibold mr-2">{OPTION_LETTERS[index]}</span>
-            {option}
-          </button>
-        );
-      })}
-      {!isAnswered && (
-        <div className="flex justify-end">
-          <button type="button" onClick={onSkip} className="text-sm border rounded px-3 py-1">
-            Saltar por ahora
-          </button>
-        </div>
-      )}
-    </div>
+    <QuestionCard
+      segment={segment}
+      answer={answer}
+      onSubmitOpen={onSubmitOpen}
+      onSelectOption={onSelectOption}
+      onSkip={onSkip}
+      onEditAnswer={onEditAnswer}
+      className={`absolute left-4 right-4 ${positionClass}`}
+    />
   );
 }

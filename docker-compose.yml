@@ -63,6 +63,14 @@ services:
       S3_REGION: us-east-1
       S3_FORCE_PATH_STYLE: "true"
       INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
+      # Optional. YouTube often blocks server IPs with a bot-check even
+      # with a JS runtime present — set this to a path (inside the
+      # container, e.g. /run/secrets/yt-cookies.txt, mounted via an extra
+      # volume line below) pointing to a Netscape-format cookies.txt
+      # exported from a real logged-in browser session if that happens.
+      # See worker/README.md. Empty/unset just means YouTube videos may
+      # fail to transcribe; nothing else in the app depends on this.
+      YT_DLP_COOKIES_FILE: ${YT_DLP_COOKIES_FILE:-}
     ports:
       - "8001:8001"
     volumes:
@@ -81,16 +89,30 @@ services:
     environment:
       DATABASE_URL: postgresql://app:app@postgres:5432/app
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      # Auth.js refuses requests against an "untrusted" host in production
+      # unless told otherwise — we're not on Vercel (which sets this
+      # automatically), so it needs to be explicit here.
+      AUTH_TRUST_HOST: "true"
       STORAGE_DRIVER: s3
       S3_ENDPOINT: http://minio:9000
+      # Presigned GET URLs are followed by the user's browser, which can't
+      # resolve the "minio" service hostname — only S3_ENDPOINT (used for
+      # server-to-server calls) needs that; presigning needs the URL the
+      # host machine can actually reach.
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
       S3_BUCKET: videos
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
       S3_REGION: us-east-1
       S3_FORCE_PATH_STYLE: "true"
       WORKER_URL: http://worker:8001
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      # Used server-side to build the worker's callback URL — must be the
+      # in-network service address, NOT the browser-facing localhost URL
+      # (the worker container calls this directly, it never goes through
+      # the host's port mapping).
+      NEXT_PUBLIC_APP_URL: http://web:3000
       INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
     ports:
       - "3000:3000"
 

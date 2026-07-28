@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI
 from pydantic import BaseModel
@@ -6,6 +7,7 @@ from pydantic import BaseModel
 from callback import post_callback
 from storage_client import resolve_local_path
 from transcription import load_model, transcribe_file
+from youtube_ingest import delete_transient_audio, download_audio_transiently
 
 
 @asynccontextmanager
@@ -19,8 +21,9 @@ app = FastAPI(lifespan=lifespan)
 
 class TranscribeRequest(BaseModel):
     video_id: str
-    storage_key: str
     callback_url: str
+    storage_key: Optional[str] = None
+    youtube_video_id: Optional[str] = None
 
 
 @app.get("/health")
@@ -35,8 +38,16 @@ def transcribe(req: TranscribeRequest, background_tasks: BackgroundTasks):
 
 
 def _run_transcription(req: TranscribeRequest) -> None:
+    transient_audio_path: Optional[str] = None
     try:
-        path = resolve_local_path(req.storage_key)
+        if req.youtube_video_id:
+            transient_audio_path = download_audio_transiently(req.youtube_video_id)
+            path = transient_audio_path
+        elif req.storage_key:
+            path = resolve_local_path(req.storage_key)
+        else:
+            raise ValueError("Se necesita storage_key o youtube_video_id")
+
         segments = transcribe_file(path)
         post_callback(
             req.callback_url,
@@ -47,3 +58,6 @@ def _run_transcription(req: TranscribeRequest) -> None:
             req.callback_url,
             {"video_id": req.video_id, "status": "failed", "error": str(exc)},
         )
+    finally:
+        if transient_audio_path:
+            delete_transient_audio(transient_audio_path)
