@@ -65,16 +65,33 @@ function OpenBody({
   const [value, setValue] = useState(answer?.answerText ?? "");
 
   if (isAnswered) {
+    const isGrading = answer!.isCorrect === null;
+    const borderClass = isGrading
+      ? ""
+      : answer!.isCorrect
+        ? "border-green-600 bg-green-50"
+        : "border-amber-600 bg-amber-50";
+
     return (
-      <textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => {
-          if (value !== answer?.answerText) onEditAnswer(value);
-        }}
-        className="border rounded px-2 py-1 text-sm"
-        rows={2}
-      />
+      <div className="flex flex-col gap-1">
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => {
+            if (value !== answer?.answerText) onEditAnswer(value);
+          }}
+          className={`border rounded px-2 py-1 text-sm ${borderClass}`}
+          rows={2}
+        />
+        {isGrading ? (
+          <p className="text-xs text-gray-500">Evaluando respuesta…</p>
+        ) : (
+          <p className={`text-xs ${answer!.isCorrect ? "text-green-700" : "text-amber-700"}`}>
+            {answer!.isCorrect ? "✓ " : "✗ "}
+            {answer!.feedback}
+          </p>
+        )}
+      </div>
     );
   }
 

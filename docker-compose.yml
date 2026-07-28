@@ -70,11 +70,16 @@ services:
       # exported from a real logged-in browser session if that happens.
       # See worker/README.md. Empty/unset just means YouTube videos may
       # fail to transcribe; nothing else in the app depends on this.
-      YT_DLP_COOKIES_FILE: ${YT_DLP_COOKIES_FILE:-}
+      YT_DLP_COOKIES_FILE: /run/secrets/yt-cookies.txt
     ports:
       - "8001:8001"
     volumes:
       - whisper-model-cache:/root/.cache/huggingface
+      # Dedicated YouTube account's exported session cookies (see
+      # worker/README.md) — never committed, lives only on this machine.
+      # Read-write: yt-dlp rewrites this file with refreshed tokens as it
+      # uses them, which keeps the session valid longer.
+      - ./worker/secrets/yt-cookies.txt:/run/secrets/yt-cookies.txt
 
   web:
     build: .

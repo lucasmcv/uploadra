@@ -38,6 +38,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         ? {
             answerText: answer.answerText,
             selectedOptionIndex: answer.selectedOptionIndex,
+            isCorrect: answer.isCorrect,
+            feedback: answer.feedback,
             skipped: answer.skipped,
             submittedAt: answer.submittedAt?.toISOString() ?? null,
           }

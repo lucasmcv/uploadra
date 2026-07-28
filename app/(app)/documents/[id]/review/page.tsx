@@ -45,6 +45,8 @@ export default async function DocumentReviewPage({
         ? {
             answerText: answer.answerText,
             selectedOptionIndex: answer.selectedOptionIndex,
+            isCorrect: answer.isCorrect,
+            feedback: answer.feedback,
             skipped: answer.skipped,
           }
         : null,

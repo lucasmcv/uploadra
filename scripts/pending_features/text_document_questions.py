@@ -1,17 +1,27 @@
 """
-IMPLEMENTED (v1: .txt only) — see lib/text-fragmentation.ts (sentence
-splitting with line tracking), lib/questions.ts (generateQuestions,
-stripEmbeddedAnswerParens, backfillMissingQuestions — the TS port of the
-two rules below), app/api/documents/route.ts (upload + generation
-pipeline), and components/document/* + hooks/useDocumentPracticePlayback.ts
-(practice/review UI). This file's verification/cleanup functions are kept
-as standalone Python utilities (e.g. for auditing an exported question
-list outside the app) — the app itself enforces the same rules in
-TypeScript, not by shelling out to this file.
+IMPLEMENTED — .txt, .pdf and .docx are all supported. See
+lib/text-fragmentation.ts (fragmentLines: sentence splitting with
+page-relative line tracking), lib/document-extraction.ts (extractPages:
+per-format text extraction — real pages for PDF via unpdf/pdf.js, page 1
+for .txt and .docx since neither format stores real pagination), lib/questions.ts
+(generateQuestions, stripEmbeddedAnswerParens, backfillMissingQuestions —
+the TS port of the two rules below), app/api/documents/route.ts (upload +
+extraction + generation pipeline), and components/document/* +
+hooks/useDocumentPracticePlayback.ts (practice/review UI, verified against
+a real 2-page PDF showing p.1/p.2 correctly and a .docx). This file's
+verification/cleanup functions are kept as standalone Python utilities
+(e.g. for auditing an exported question list outside the app) — the app
+itself enforces the same rules in TypeScript, not by shelling out to this
+file.
 
-PDF/DOCX support is NOT implemented yet (v1 shipped .txt-only, page always
-1, real line numbers — see the "Page-accurate extraction" note below,
-still open for whenever pdf/docx get added).
+Also implemented since this was first written: automatic grading of open
+answers. See lib/grading.ts (evaluateOpenAnswer — compares the user's
+answer against the literal source fragment, never a paraphrase, via
+Gemini) wired into both app/api/segments/[id]/answer/route.ts and
+app/api/document-fragments/[id]/answer/route.ts, with isCorrect/feedback
+columns on Answer/DocAnswer and a ✓/✗ display in both practice
+(components/player/QuestionCard.tsx) and review
+(components/player/SegmentOverlay.tsx, components/document/DocumentReviewView.tsx).
 
 GOAL
 ----

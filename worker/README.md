@@ -48,16 +48,18 @@ JavaScript disponible (el worker incluye `deno` para esto). Cuando pasa, la
 transcripción de ese video falla con ese mensaje de error — el resto de la
 app (subida de archivos, documentos de texto) no se ve afectado.
 
-Mitigación (recomendada por el propio yt-dlp): exportar las cookies de una
-sesión real y logueada de YouTube desde tu navegador a un archivo
-`cookies.txt` (formato Netscape — hay extensiones de navegador para esto,
-ej. "Get cookies.txt LOCALLY"), montarlo en el contenedor del worker, y
-apuntar `YT_DLP_COOKIES_FILE` a esa ruta. Ejemplo en `docker-compose.yml`:
+**Mitigación ya configurada en este proyecto**, con una cuenta de Google
+dedicada solo a esto (no la personal de quien administra la plataforma):
+las cookies de esa cuenta, exportadas con la extensión "Get cookies.txt
+LOCALLY", viven en `worker/secrets/yt-cookies.txt` (nunca se commitea, está
+en `.gitignore`) y `docker-compose.yml` ya la monta en el contenedor del
+worker en `/run/secrets/yt-cookies.txt`, apuntada por `YT_DLP_COOKIES_FILE`.
+Esto es transparente para los usuarios de la plataforma — nadie necesita
+loguearse en YouTube ni saber que esto existe, solo pegan el link.
 
-```yaml
-worker:
-  environment:
-    YT_DLP_COOKIES_FILE: /run/secrets/yt-cookies.txt
-  volumes:
-    - ./yt-cookies.txt:/run/secrets/yt-cookies.txt:ro
-```
+Si esa cuenta dedicada llega a tener problemas (cierre, verificación
+adicional, etc.), el arreglo es volver a exportar sus cookies y
+reemplazar `worker/secrets/yt-cookies.txt`, sin tocar código.
+
+Para correr el worker fuera de Docker (directo en el host), `YT_DLP_COOKIES_FILE`
+en `.env` ya apunta a `./secrets/yt-cookies.txt` relativo a `worker/`.

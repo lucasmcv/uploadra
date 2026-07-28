@@ -89,6 +89,11 @@ model Answer {
   answerText          String?
   // mcq mode only: index (0-3) of the option the user picked
   selectedOptionIndex Int?
+  // open mode only: LLM judgment comparing answerText against
+  // transcriptText. Null for mcq/skipped answers (correctness is derived
+  // directly from correctOptionIndex there, no need to duplicate it).
+  isCorrect           Boolean?
+  feedback            String?
   skipped             Boolean   @default(false)
   submittedAt         DateTime?
   updatedAt           DateTime  @updatedAt
@@ -152,6 +157,10 @@ model DocAnswer {
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   answerText          String?
   selectedOptionIndex Int?
+  // open mode only: LLM judgment comparing answerText against the
+  // fragment's text. Null for mcq/skipped answers.
+  isCorrect           Boolean?
+  feedback            String?
   skipped             Boolean   @default(false)
   submittedAt         DateTime?
   updatedAt           DateTime  @updatedAt

@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { DocumentStatus, QuestionMode } from "@/lib/types";
-import { fragmentText } from "@/lib/text-fragmentation";
+import { fragmentLines, type TextFragment } from "@/lib/text-fragmentation";
+import { extractPages, type DocumentSourceFormat } from "@/lib/document-extraction";
 import { backfillMissingQuestions, generateQuestions } from "@/lib/questions";
 
 export async function GET() {
@@ -20,6 +21,19 @@ export async function GET() {
   return NextResponse.json({ documents });
 }
 
+function detectFormat(filename: string, mimeType: string): DocumentSourceFormat | null {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".txt") || mimeType === "text/plain") return "txt";
+  if (lower.endsWith(".pdf") || mimeType === "application/pdf") return "pdf";
+  if (
+    lower.endsWith(".docx") ||
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "docx";
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
@@ -34,24 +48,47 @@ export async function POST(req: NextRequest) {
     questionModeInput === QuestionMode.Mcq ? QuestionMode.Mcq : QuestionMode.Open;
 
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Falta el archivo de texto." }, { status: 400 });
+    return NextResponse.json({ error: "Falta el archivo del documento." }, { status: 400 });
   }
 
-  const isTxt = file.name.toLowerCase().endsWith(".txt") || file.type === "text/plain";
-  if (!isTxt) {
+  const format = detectFormat(file.name, file.type);
+  if (!format) {
     return NextResponse.json(
-      { error: "Por ahora solo se admiten archivos .txt (PDF/DOCX próximamente)." },
+      { error: "Formato no admitido. Se aceptan archivos .txt, .pdf o .docx." },
       { status: 400 }
     );
   }
 
-  const rawText = await file.text();
-  const fragments = fragmentText(rawText);
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  let pages;
+  try {
+    pages = await extractPages(buffer, format);
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error:
+          err instanceof Error
+            ? `No se pudo leer el archivo: ${err.message}`
+            : "No se pudo leer el archivo.",
+      },
+      { status: 400 }
+    );
+  }
+
+  let orderIndex = 0;
+  const fragments: (TextFragment & { page: number })[] = [];
+  for (const page of pages) {
+    for (const f of fragmentLines(page.lines)) {
+      fragments.push({ ...f, orderIndex: orderIndex++, page: page.pageNumber });
+    }
+  }
 
   if (fragments.length === 0) {
     return NextResponse.json({ error: "El archivo no tiene contenido de texto." }, { status: 400 });
   }
 
+  const rawText = pages.map((p) => p.lines.join("\n")).join("\n\n");
   const documentId = randomUUID();
 
   await prisma.document.create({
@@ -60,7 +97,7 @@ export async function POST(req: NextRequest) {
       ownerId: session.user.id,
       title: typeof titleOverride === "string" && titleOverride.trim() ? titleOverride : file.name,
       originalFilename: file.name,
-      sourceFormat: "txt",
+      sourceFormat: format,
       rawText,
       status: DocumentStatus.Processing,
       questionMode,
@@ -79,7 +116,7 @@ export async function POST(req: NextRequest) {
           return {
             documentId,
             orderIndex: f.orderIndex,
-            page: 1,
+            page: f.page,
             lineStart: f.lineStart,
             lineEnd: f.lineEnd,
             text: f.text,

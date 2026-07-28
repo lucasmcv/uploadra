@@ -21,6 +21,20 @@ function firstUnansweredIndex(
   return idx === -1 ? 0 : idx;
 }
 
+async function postAnswer(
+  fragmentId: string,
+  body: Record<string, unknown>
+): Promise<{ isCorrect: boolean | null; feedback: string | null }> {
+  const res = await fetch(`/api/document-fragments/${fragmentId}/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return { isCorrect: null, feedback: null };
+  const { answer } = await res.json();
+  return { isCorrect: answer?.isCorrect ?? null, feedback: answer?.feedback ?? null };
+}
+
 export function useDocumentPracticePlayback(
   fragments: PracticeFragment[],
   initialAnswers: Record<string, AnswerState>
@@ -37,49 +51,52 @@ export function useDocumentPracticePlayback(
   }, [fragments.length]);
 
   const submitOpenAnswer = useCallback(async (fragmentId: string, answerText: string) => {
-    setAnswers((prev) => ({ ...prev, [fragmentId]: { answerText, selectedOptionIndex: null, skipped: false } }));
-    await fetch(`/api/document-fragments/${fragmentId}/answer`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answerText, skipped: false }),
-    });
+    setAnswers((prev) => ({
+      ...prev,
+      [fragmentId]: { answerText, selectedOptionIndex: null, skipped: false, isCorrect: null, feedback: null },
+    }));
+
+    const { isCorrect, feedback } = await postAnswer(fragmentId, { answerText, skipped: false });
+    setAnswers((prev) => ({ ...prev, [fragmentId]: { ...prev[fragmentId], isCorrect, feedback } }));
   }, []);
 
   const editAnswer = useCallback(async (fragmentId: string, answerText: string) => {
     setAnswers((prev) => ({
       ...prev,
-      [fragmentId]: { answerText, selectedOptionIndex: null, skipped: false },
+      [fragmentId]: { answerText, selectedOptionIndex: null, skipped: false, isCorrect: null, feedback: null },
     }));
-    await fetch(`/api/document-fragments/${fragmentId}/answer`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answerText, skipped: false }),
-    });
+
+    const { isCorrect, feedback } = await postAnswer(fragmentId, { answerText, skipped: false });
+    setAnswers((prev) => ({ ...prev, [fragmentId]: { ...prev[fragmentId], isCorrect, feedback } }));
   }, []);
 
   const selectOption = useCallback(async (fragmentId: string, optionIndex: number) => {
     setAnswers((prev) => ({
       ...prev,
-      [fragmentId]: { answerText: null, selectedOptionIndex: optionIndex, skipped: false },
+      [fragmentId]: {
+        answerText: null,
+        selectedOptionIndex: optionIndex,
+        skipped: false,
+        isCorrect: null,
+        feedback: null,
+      },
     }));
-    await fetch(`/api/document-fragments/${fragmentId}/answer`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selectedOptionIndex: optionIndex, skipped: false }),
-    });
+    await postAnswer(fragmentId, { selectedOptionIndex: optionIndex, skipped: false });
   }, []);
 
   const skipFragment = useCallback(
     async (fragmentId: string) => {
       setAnswers((prev) => ({
         ...prev,
-        [fragmentId]: { answerText: null, selectedOptionIndex: null, skipped: true },
+        [fragmentId]: {
+          answerText: null,
+          selectedOptionIndex: null,
+          skipped: true,
+          isCorrect: null,
+          feedback: null,
+        },
       }));
-      await fetch(`/api/document-fragments/${fragmentId}/answer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skipped: true }),
-      });
+      await postAnswer(fragmentId, { skipped: true });
       goToNext();
     },
     [goToNext]

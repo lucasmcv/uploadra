@@ -16,7 +16,13 @@ export interface ReviewSegment {
   question: string | null;
   options: string[] | null;
   correctOptionIndex: number | null;
-  answer: { answerText: string | null; selectedOptionIndex: number | null; skipped: boolean } | null;
+  answer: {
+    answerText: string | null;
+    selectedOptionIndex: number | null;
+    isCorrect: boolean | null;
+    feedback: string | null;
+    skipped: boolean;
+  } | null;
 }
 
 export function ReviewPlayer({
@@ -62,6 +68,8 @@ export function ReviewPlayer({
           correctOptionIndex={activeSegment.correctOptionIndex}
           answerText={activeSegment.answer?.answerText ?? null}
           selectedOptionIndex={activeSegment.answer?.selectedOptionIndex ?? null}
+          isCorrect={activeSegment.answer?.isCorrect ?? null}
+          feedback={activeSegment.answer?.feedback ?? null}
           skipped={activeSegment.answer?.skipped ?? false}
         />
       )}

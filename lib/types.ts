@@ -29,6 +29,8 @@ export interface AnswerDTO {
   segmentId: string;
   answerText: string | null;
   selectedOptionIndex: number | null;
+  isCorrect: boolean | null;
+  feedback: string | null;
   skipped: boolean;
   submittedAt: string | null;
 }
@@ -37,6 +39,9 @@ export interface AnswerState {
   answerText: string | null;
   selectedOptionIndex: number | null;
   skipped: boolean;
+  /** open mode only: LLM judgment vs. the correct text. Null = mcq, skipped, or not yet graded. */
+  isCorrect: boolean | null;
+  feedback: string | null;
 }
 
 /** Minimal shape needed to render a question prompt (open or mcq). */

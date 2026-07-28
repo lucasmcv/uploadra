@@ -6,22 +6,23 @@ export interface TextFragment {
 }
 
 /**
- * Splits raw text into sentence-level fragments, tracking the original
- * (1-based) line numbers each fragment spans. Sentence boundaries are
- * detected with a simple regex (., !, ?) — good enough for MVP coverage,
- * not a full NLP sentence splitter (abbreviations/decimals can over-split
- * occasionally, which is an acceptable tradeoff here).
+ * Splits an array of lines (already scoped to a single page — line numbers
+ * are page-relative, matching how a real book/PDF citation like "p.12,
+ * l.3-7" works) into sentence-level fragments, tracking the (1-based) line
+ * numbers each fragment spans. Sentence boundaries are detected with a
+ * simple regex (., !, ?) — good enough for MVP coverage, not a full NLP
+ * sentence splitter (abbreviations/decimals can over-split occasionally,
+ * an acceptable tradeoff here). orderIndex is 0-based *within this page* —
+ * callers spanning multiple pages renumber it into a continuous sequence.
  */
-export function fragmentText(rawText: string): TextFragment[] {
-  const normalized = rawText.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-
+export function fragmentLines(lines: string[]): TextFragment[] {
   const lineStartOffsets: number[] = [];
   let cursor = 0;
   for (const line of lines) {
     lineStartOffsets.push(cursor);
-    cursor += line.length + 1; // +1 for the "\n" the lines were joined with
+    cursor += line.length + 1; // +1 for the "\n" the lines are joined with
   }
+  const normalized = lines.join("\n");
 
   function offsetToLine(offset: number): number {
     let line = 0;
@@ -55,4 +56,10 @@ export function fragmentText(rawText: string): TextFragment[] {
   }
 
   return fragments;
+}
+
+/** Convenience wrapper for single-page plain text (e.g. a .txt upload). */
+export function fragmentText(rawText: string): TextFragment[] {
+  const lines = rawText.replace(/\r\n/g, "\n").split("\n");
+  return fragmentLines(lines);
 }

@@ -14,7 +14,7 @@ export function DocumentUploadForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) {
-      setError("Elegí un archivo .txt primero.");
+      setError("Elegí un archivo .txt, .pdf o .docx primero.");
       return;
     }
 
@@ -44,18 +44,19 @@ export function DocumentUploadForm() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 max-w-lg">
       <p className="text-sm text-gray-600">
-        Por ahora solo se admiten archivos <code>.txt</code> (PDF/DOCX próximamente). Como el texto
-        plano no tiene páginas reales, todas las referencias usan la página 1 y números de línea
-        reales del archivo.
+        Se admiten archivos <code>.txt</code>, <code>.pdf</code> y <code>.docx</code>. Los PDF usan
+        páginas reales del archivo; el texto plano y los .docx no tienen páginas reales (Word no
+        guarda paginación en el archivo), así que ahí todo queda como página 1 con números de línea
+        reales.
       </p>
       <div className="flex flex-col gap-1">
         <label htmlFor="doc-file" className="text-sm font-medium">
-          Archivo de texto (.txt)
+          Archivo (.txt, .pdf o .docx)
         </label>
         <input
           id="doc-file"
           type="file"
-          accept=".txt,text/plain"
+          accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           required
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="border rounded px-3 py-2"

@@ -48,6 +48,8 @@ export default async function PracticePage({
       initialAnswers[s.id] = {
         answerText: answer.answerText,
         selectedOptionIndex: answer.selectedOptionIndex,
+        isCorrect: answer.isCorrect,
+        feedback: answer.feedback,
         skipped: answer.skipped,
       };
     }

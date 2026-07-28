@@ -55,4 +55,6 @@ next-env.d.ts
 /worker/__pycache__
 /worker/.venv
 /worker/worker.log
+# real YouTube session cookies — never commit these
+/worker/secrets/
 
