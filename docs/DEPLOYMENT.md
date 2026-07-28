@@ -22,29 +22,34 @@ la cola de transcripción) y `web`. La app queda en `http://localhost:3000`.
 ## Despliegue público (Fly.io) — qué tenés que crear vos
 
 El código y la configuración (`fly.toml`, `worker/fly.toml`) ya están
-preparados, pero el deploy real necesita cuentas que solo vos podés crear
-(altas de cuenta y carga de método de pago — Claude no puede hacer esto
-por vos bajo ninguna circunstancia). Checklist, en orden:
+preparados. Simplificando respecto a la versión anterior de esta guía:
+Fly.io ofrece Postgres, Redis (vía Upstash, integrado) y storage
+S3-compatible (Tigris) directamente desde su propia plataforma — **no
+hace falta abrir cuenta en AWS ni en Upstash por separado**, todo queda
+bajo una sola cuenta y una sola facturación. Checklist, en orden:
 
 1. **Cuenta de Fly.io** (fly.io/app/sign-up) + método de pago cargado.
-   Después generá un deploy token (`fly tokens create deploy` una vez
-   tengas el CLI instalado) — ese token sí me lo podés pasar como variable
-   de entorno local (mismo patrón que las demás API keys, nunca en el chat)
-   para que pueda correr `fly deploy` por vos.
-2. **Cuenta de AWS** + un bucket S3 nuevo + un usuario IAM con permisos
-   limitados solo a ese bucket (no uses las credenciales root de la
-   cuenta). Las claves de acceso van a `S3_ACCESS_KEY`/`S3_SECRET_KEY`.
-3. **Cuenta de Upstash** (upstash.com) → crear una base Redis → copiar su
-   connection string a `REDIS_URL`.
-4. Postgres gestionado: o el addon de Postgres de Fly.io, o una cuenta de
-   Neon/Supabase — cualquiera de las dos sirve, solo cambia `DATABASE_URL`.
-5. Confirmar en tu dashboard de Stripe que el modo elegido (live, según lo
-   que ya definiste) tiene habilitados los medios de pago que vas a
+   Instalá el CLI (`flyctl`) y hacé `fly auth login`.
+2. Generá un deploy token (`fly tokens create deploy`) — ese token sí me
+   lo podés pasar como variable de entorno local (mismo patrón que las
+   demás API keys: va en `.env`, nunca en el chat) para que pueda correr
+   los comandos de deploy por vos desde acá.
+3. Una vez con el CLI logueado, estos tres recursos se crean con un
+   comando cada uno (te paso los comandos exactos cuando lleguemos a esa
+   parte — dependen de nombres que se definen en el momento):
+   - Postgres gestionado (`fly postgres create`) → da `DATABASE_URL`.
+   - Redis (`fly redis create`) → da `REDIS_URL`.
+   - Storage S3-compatible / Tigris (`fly storage create`) → da
+     `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (el mismo driver
+     `lib/storage/s3.ts` funciona sin cambios, es API-compatible con S3).
+4. Confirmar en tu dashboard de Stripe que el modo elegido (live, según
+   lo que ya definiste) tiene habilitados los medios de pago que vas a
    necesitar para usuarios argentinos.
 
-Con esas 4-5 cuentas creadas y sus credenciales en `.env` (nunca en el
-chat), avisame y hago el resto: `fly launch`, `fly secrets set` para cada
-variable, y `fly deploy` de las dos apps (`dictado-web`, `dictado-worker`).
+Con la cuenta de Fly.io creada y el deploy token en `.env`, avisame y
+hago el resto: crear los tres recursos (Postgres/Redis/storage), `fly
+launch` de las dos apps (`dictado-web`, `dictado-worker`), `fly secrets
+set` para cada variable, y el primer `fly deploy`.
 
 La primera vez, el contenedor `worker` va a descargar los pesos del modelo
 Whisper configurado (`WHISPER_MODEL_SIZE`, default `small`) — quedan
