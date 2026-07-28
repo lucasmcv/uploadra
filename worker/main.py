@@ -32,5 +32,9 @@ def transcribe(req: TranscribeRequest):
     # WhisperModel memory footprint) lives in separate "rq worker"
     # processes, so N concurrent uploads never contend for one shared
     # model instance the way the old BackgroundTasks dispatch did.
-    _queue.enqueue(run_transcription_job, req.model_dump())
+    # RQ's default job_timeout is 180s, which a real transcription (several
+    # minutes for anything beyond a short clip) blows past easily — RQ then
+    # force-kills the job and the video is left "failed" with a
+    # "Task exceeded maximum timeout" error instead of ever finishing.
+    _queue.enqueue(run_transcription_job, req.model_dump(), job_timeout="2h")
     return {"accepted": True}
