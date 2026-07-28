@@ -40,7 +40,6 @@ export default async function VideosPage() {
         id: v.id,
         title: v.title,
         status: v.status,
-        enabled: v.enabled,
       }))}
     />
   );

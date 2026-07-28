@@ -32,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ document });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "No autenticado." }, { status: 401 });
@@ -44,15 +44,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "No encontrado." }, { status: 404 });
   }
 
-  const body = await req.json();
-  if (typeof body.enabled !== "boolean") {
-    return NextResponse.json({ error: "Falta el campo 'enabled'." }, { status: 400 });
-  }
+  // fragments/docAnswers cascade via the DB foreign keys; documents have no
+  // separate storage object — rawText lives directly in the DB row
+  await prisma.document.delete({ where: { id } });
 
-  const updated = await prisma.document.update({
-    where: { id },
-    data: { enabled: body.enabled },
-  });
-
-  return NextResponse.json({ document: updated });
+  return NextResponse.json({ ok: true });
 }

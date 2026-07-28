@@ -40,7 +40,6 @@ export default async function DocumentsPage() {
         id: d.id,
         title: d.title,
         status: d.status,
-        enabled: d.enabled,
       }))}
     />
   );

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getStaleFailureMessage } from "@/lib/processing-watchdog";
+import { getStorageDriver } from "@/lib/storage";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -32,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ video });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "No autenticado." }, { status: 401 });
@@ -44,15 +45,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "No encontrado." }, { status: 404 });
   }
 
-  const body = await req.json();
-  if (typeof body.enabled !== "boolean") {
-    return NextResponse.json({ error: "Falta el campo 'enabled'." }, { status: 400 });
+  // uploads store the source file in object storage; youtube videos never
+  // do (playback is via the embedded player, audio was only ever transient)
+  if (video.storageKey) {
+    await getStorageDriver().deleteObject(video.storageKey);
   }
 
-  const updated = await prisma.video.update({
-    where: { id },
-    data: { enabled: body.enabled },
-  });
+  // segments/answers cascade via the DB foreign keys
+  await prisma.video.delete({ where: { id } });
 
-  return NextResponse.json({ video: updated });
+  return NextResponse.json({ ok: true });
 }
