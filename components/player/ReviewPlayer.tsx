@@ -19,8 +19,6 @@ export interface ReviewSegment {
   answer: {
     answerText: string | null;
     selectedOptionIndex: number | null;
-    isCorrect: boolean | null;
-    feedback: string | null;
     skipped: boolean;
   } | null;
 }
@@ -68,8 +66,6 @@ export function ReviewPlayer({
           correctOptionIndex={activeSegment.correctOptionIndex}
           answerText={activeSegment.answer?.answerText ?? null}
           selectedOptionIndex={activeSegment.answer?.selectedOptionIndex ?? null}
-          isCorrect={activeSegment.answer?.isCorrect ?? null}
-          feedback={activeSegment.answer?.feedback ?? null}
           skipped={activeSegment.answer?.skipped ?? false}
         />
       )}

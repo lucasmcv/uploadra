@@ -13,8 +13,6 @@ export interface ReviewFragment {
   answer: {
     answerText: string | null;
     selectedOptionIndex: number | null;
-    isCorrect: boolean | null;
-    feedback: string | null;
     skipped: boolean;
   } | null;
 }
@@ -46,21 +44,13 @@ export function DocumentReviewView({ fragments }: { fragments: ReviewFragment[] 
               {fragment.answer?.skipped && <p className="text-sm text-amber-600">Saltado</p>}
             </div>
           ) : (
-            <>
-              <p className="text-sm text-gray-600">
-                {fragment.answer?.skipped
-                  ? "Saltado"
-                  : fragment.answer?.answerText
-                    ? `Tu respuesta: ${fragment.answer.answerText}`
-                    : "Sin respuesta"}
-              </p>
-              {fragment.answer?.isCorrect !== null && fragment.answer?.isCorrect !== undefined && (
-                <p className={`text-xs ${fragment.answer.isCorrect ? "text-green-700" : "text-amber-700"}`}>
-                  {fragment.answer.isCorrect ? "✓ " : "✗ "}
-                  {fragment.answer.feedback}
-                </p>
-              )}
-            </>
+            <p className="text-sm text-gray-600">
+              {fragment.answer?.skipped
+                ? "Saltado"
+                : fragment.answer?.answerText
+                  ? `Tu respuesta: ${fragment.answer.answerText}`
+                  : "Sin respuesta"}
+            </p>
           )}
         </li>
       ))}

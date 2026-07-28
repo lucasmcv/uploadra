@@ -12,6 +12,7 @@ export function QuestionCard({
   onSelectOption,
   onSkip,
   onEditAnswer,
+  revealCorrectText,
   className = "",
 }: {
   segment: QuestionLike;
@@ -20,6 +21,16 @@ export function QuestionCard({
   onSelectOption: (index: number) => void;
   onSkip: () => void;
   onEditAnswer: (text: string) => void;
+  /**
+   * The literal source text (segment.transcriptText / fragment.text) to
+   * display once an open answer is submitted, so the user can compare it
+   * themselves — no AI judgment involved. Pass this for text documents,
+   * where there's no other way to reveal the "correct answer". Omit for
+   * video/audio: continuing playback plays the segment itself right after
+   * answering, which already is the reveal (hearing/seeing it directly),
+   * so no extra text display is needed there.
+   */
+  revealCorrectText?: string;
   className?: string;
 }) {
   const isAnswered = Boolean(answer) && !answer!.skipped;
@@ -43,6 +54,7 @@ export function QuestionCard({
           onSubmitOpen={onSubmitOpen}
           onSkip={onSkip}
           onEditAnswer={onEditAnswer}
+          revealCorrectText={revealCorrectText}
         />
       )}
     </div>
@@ -55,23 +67,18 @@ function OpenBody({
   onSubmitOpen,
   onSkip,
   onEditAnswer,
+  revealCorrectText,
 }: {
   answer: AnswerState | undefined;
   isAnswered: boolean;
   onSubmitOpen: (text: string) => void;
   onSkip: () => void;
   onEditAnswer: (text: string) => void;
+  revealCorrectText?: string;
 }) {
   const [value, setValue] = useState(answer?.answerText ?? "");
 
   if (isAnswered) {
-    const isGrading = answer!.isCorrect === null;
-    const borderClass = isGrading
-      ? ""
-      : answer!.isCorrect
-        ? "border-green-600 bg-green-50"
-        : "border-amber-600 bg-amber-50";
-
     return (
       <div className="flex flex-col gap-1">
         <textarea
@@ -80,15 +87,12 @@ function OpenBody({
           onBlur={() => {
             if (value !== answer?.answerText) onEditAnswer(value);
           }}
-          className={`border rounded px-2 py-1 text-sm ${borderClass}`}
+          className="border rounded px-2 py-1 text-sm"
           rows={2}
         />
-        {isGrading ? (
-          <p className="text-xs text-gray-500">Evaluando respuesta…</p>
-        ) : (
-          <p className={`text-xs ${answer!.isCorrect ? "text-green-700" : "text-amber-700"}`}>
-            {answer!.isCorrect ? "✓ " : "✗ "}
-            {answer!.feedback}
+        {revealCorrectText && (
+          <p className="text-xs text-gray-600">
+            <span className="font-medium">Texto correcto:</span> {revealCorrectText}
           </p>
         )}
       </div>

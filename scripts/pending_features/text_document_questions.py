@@ -14,14 +14,14 @@ verification/cleanup functions are kept as standalone Python utilities
 itself enforces the same rules in TypeScript, not by shelling out to this
 file.
 
-Also implemented since this was first written: automatic grading of open
-answers. See lib/grading.ts (evaluateOpenAnswer — compares the user's
-answer against the literal source fragment, never a paraphrase, via
-Gemini) wired into both app/api/segments/[id]/answer/route.ts and
-app/api/document-fragments/[id]/answer/route.ts, with isCorrect/feedback
-columns on Answer/DocAnswer and a ✓/✗ display in both practice
-(components/player/QuestionCard.tsx) and review
-(components/player/SegmentOverlay.tsx, components/document/DocumentReviewView.tsx).
+AI-based grading of open answers was implemented and then explicitly
+reverted per user request: no LLM should judge correctness. Video/audio
+segments are self-checked by playback resuming right after the answer;
+text-document fragments show the literal fragment text (unmodified,
+fixed before the question is even generated) as "Texto correcto" via a
+revealCorrectText prop on components/player/QuestionCard.tsx. There is
+no isCorrect/feedback anywhere — those columns were dropped from
+Answer/DocAnswer and lib/grading.ts was deleted.
 
 GOAL
 ----

@@ -10,8 +10,6 @@ export function SegmentOverlay({
   correctOptionIndex,
   answerText,
   selectedOptionIndex,
-  isCorrect,
-  feedback,
   skipped,
 }: {
   position?: "top" | "bottom";
@@ -21,8 +19,6 @@ export function SegmentOverlay({
   correctOptionIndex: number | null;
   answerText: string | null;
   selectedOptionIndex: number | null;
-  isCorrect: boolean | null;
-  feedback: string | null;
   skipped: boolean;
 }) {
   const positionClass = position === "top" ? "top-4" : "bottom-4";
@@ -50,17 +46,9 @@ export function SegmentOverlay({
           {skipped && <p className="text-sm text-gray-300">Saltado</p>}
         </div>
       ) : (
-        <>
-          <p className="text-sm text-gray-300">
-            {skipped ? "Saltado" : answerText ? `Tu respuesta: ${answerText}` : "Sin respuesta"}
-          </p>
-          {isCorrect !== null && (
-            <p className={`text-xs ${isCorrect ? "text-green-400" : "text-amber-400"}`}>
-              {isCorrect ? "✓ " : "✗ "}
-              {feedback}
-            </p>
-          )}
-        </>
+        <p className="text-sm text-gray-300">
+          {skipped ? "Saltado" : answerText ? `Tu respuesta: ${answerText}` : "Sin respuesta"}
+        </p>
       )}
     </div>
   );

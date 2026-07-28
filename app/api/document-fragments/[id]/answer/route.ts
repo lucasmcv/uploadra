@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { evaluateOpenAnswer } from "@/lib/grading";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -25,16 +24,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     skipped?: boolean;
   };
 
-  let grading: { isCorrect: boolean; feedback: string } | null = null;
-  if (!skipped && selectedOptionIndex == null && answerText) {
-    grading = await evaluateOpenAnswer(fragment.text, answerText);
-  }
-
   const data = {
     answerText: skipped ? null : (answerText ?? null),
     selectedOptionIndex: skipped ? null : (selectedOptionIndex ?? null),
-    isCorrect: skipped ? null : (grading?.isCorrect ?? null),
-    feedback: skipped ? null : (grading?.feedback ?? null),
     skipped: Boolean(skipped),
     submittedAt: new Date(),
   };

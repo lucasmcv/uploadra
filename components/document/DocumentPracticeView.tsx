@@ -49,6 +49,7 @@ export function DocumentPracticeView({
               onSelectOption={(index) => selectOption(activeFragment.id, index)}
               onSkip={() => skipFragment(activeFragment.id)}
               onEditAnswer={(text) => editAnswer(activeFragment.id, text)}
+              revealCorrectText={activeFragment.text}
             />
             {isAnswered && !isLast && (
               <button

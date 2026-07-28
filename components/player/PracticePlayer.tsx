@@ -21,6 +21,7 @@ export function PracticePlayer({
 }) {
   const videoRef = useRef<MinimalPlayer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [autoPauseEnabled, setAutoPauseEnabled] = useState(true);
   const {
     answers,
     activeIndex,
@@ -31,7 +32,7 @@ export function PracticePlayer({
     selectOption,
     skipSegment,
     isFinished,
-  } = usePracticePlayback(segments, initialAnswers, videoRef);
+  } = usePracticePlayback(segments, initialAnswers, videoRef, autoPauseEnabled);
 
   const activeSegment = activeIndex !== null ? segments[activeIndex] : null;
 
@@ -80,13 +81,23 @@ export function PracticePlayer({
             />
           )}
         </div>
-        <button
-          type="button"
-          onClick={togglePlay}
-          className="mt-3 bg-black text-white rounded px-4 py-2"
-        >
-          {isPlaying ? "Pausar" : "Reproducir"}
-        </button>
+        <div className="mt-3 flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="bg-black text-white rounded px-4 py-2"
+          >
+            {isPlaying ? "Pausar" : "Reproducir"}
+          </button>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={!autoPauseEnabled}
+              onChange={(e) => setAutoPauseEnabled(!e.target.checked)}
+            />
+            Reproducir sin pausas (ver preguntas sin detener el video/audio)
+          </label>
+        </div>
         {isFinished && (
           <p className="mt-4 text-green-700 font-medium">
             Terminaste todos los segmentos. Podés repasar tus respuestas.
