@@ -19,6 +19,25 @@ model User {
   name         String?
   createdAt    DateTime @default(now())
 
+  // Billing (Stripe) — all nullable because the platform is free until the
+  // global user-count tier kicks in (see lib/billing-tiers.ts); most users
+  // will never have any of these set.
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  // one of: active | trialing | past_due | canceled | incomplete |
+  // incomplete_expired | unpaid — mirrors Stripe's subscription.status
+  subscriptionStatus   String?
+  // ARS cents Stripe is CURRENTLY charging this user — compared live
+  // against getCurrentRequiredTierCents() to detect a stale price after
+  // the global tier ticks up; kept separate from "is this user allowed to
+  // write right now", which depends only on subscriptionStatus/grace.
+  subscribedPriceCents Int?
+  currentPeriodEnd     DateTime?
+  // Set the first time this user is found liable-but-unsubscribed; starts
+  // their individual grace window rather than a single platform-wide
+  // "we crossed the threshold" timestamp.
+  paymentGraceUntil    DateTime?
+
   videos     Video[]
   answers    Answer[]
   documents  Document[]
