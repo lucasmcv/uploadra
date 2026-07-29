@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getStaleFailureMessage } from "@/lib/processing-watchdog";
 import { getStorageDriver } from "@/lib/storage";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -13,21 +12,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const video = await prisma.video.findUnique({
     where: { id },
-    include: { _count: { select: { segments: true } } },
+    include: { segments: { orderBy: { orderIndex: "asc" } } },
   });
 
   if (!video || video.ownerId !== session.user.id) {
     return NextResponse.json({ error: "No encontrado." }, { status: 404 });
-  }
-
-  const staleMessage = getStaleFailureMessage(video.status, video.updatedAt);
-  if (staleMessage) {
-    await prisma.video.update({
-      where: { id: video.id },
-      data: { status: "failed", errorMessage: staleMessage },
-    });
-    video.status = "failed";
-    video.errorMessage = staleMessage;
   }
 
   return NextResponse.json({ video });

@@ -39,35 +39,35 @@ model User {
   paymentGraceUntil    DateTime?
 
   videos     Video[]
-  answers    Answer[]
   documents  Document[]
   docAnswers DocAnswer[]
 
   @@map("users")
 }
 
+// A video/audio "study sheet": a pasted transcript (with timestamps, from
+// YouTube's own panel, TurboScribe, or similar) gets split into segments,
+// each with an LLM-generated comprehension question. There's no dictation
+// practice/answer-checking step here — the point is quick navigation, so
+// each question links straight to the moment in the video/audio that
+// answers it (see components/videos/VideoQAView.tsx).
 model Video {
-  id               String   @id @default(uuid())
-  ownerId          String
-  owner            User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  title            String
+  id             String   @id @default(uuid())
+  ownerId        String
+  owner          User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title          String
   // one of: upload | youtube
-  sourceType       String   @default("upload")
-  originalFilename String?
+  sourceType     String   @default("youtube")
   // upload only — null for sourceType="youtube"
-  storageKey       String?
-  mimeType         String?
+  storageKey     String?
+  mimeType       String?
   // youtube only — the 11-char video id, null for sourceType="upload"
-  youtubeVideoId   String?
-  durationSeconds  Float?
-  // one of: uploading | transcribing | ready | failed
-  status           String   @default("uploading")
-  errorMessage     String?
-  whisperModel     String?
-  // one of: open | mcq — chosen at upload time, fixed for this video
-  questionMode     String   @default("open")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  youtubeVideoId String?
+  // one of: ready | failed
+  status         String   @default("ready")
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   segments Segment[]
 
@@ -76,44 +76,22 @@ model Video {
 }
 
 model Segment {
-  id                 String   @id @default(uuid())
-  videoId            String
-  video              Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  orderIndex         Int
-  startTime          Float
-  endTime            Float
-  transcriptText     String
+  id             String   @id @default(uuid())
+  videoId        String
+  video          Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  orderIndex     Int
+  startTime      Float
+  endTime        Float
+  transcriptText String
   // LLM-generated question whose direct answer is transcriptText; null if
-  // generation failed or hasn't run yet (UI falls back to a generic prompt).
-  question           String?
-  // mcq mode only: JSON-encoded array of 4 option strings, and the index
-  // (0-3) of the option matching transcriptText.
-  options            String?
-  correctOptionIndex Int?
-  createdAt          DateTime @default(now())
-
-  answers Answer[]
+  // generation failed (backfillMissingQuestions guarantees a generic
+  // fallback instead, so this is null only for pre-existing rows).
+  question       String?
+  createdAt      DateTime @default(now())
 
   @@unique([videoId, orderIndex])
   @@index([videoId, startTime])
   @@map("segments")
-}
-
-model Answer {
-  id                  String    @id @default(uuid())
-  segmentId           String
-  segment             Segment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
-  userId              String
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  answerText          String?
-  // mcq mode only: index (0-3) of the option the user picked
-  selectedOptionIndex Int?
-  skipped             Boolean   @default(false)
-  submittedAt         DateTime?
-  updatedAt           DateTime  @updatedAt
-
-  @@unique([segmentId, userId])
-  @@map("answers")
 }
 
 model Document {

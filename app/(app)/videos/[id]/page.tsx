@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { VideoStatusView } from "@/components/videos/VideoStatusView";
+import { VideoQAView } from "@/components/videos/VideoQAView";
 
 export default async function VideoDetailPage({
   params,
@@ -13,15 +13,15 @@ export default async function VideoDetailPage({
 
   const video = await prisma.video.findUnique({
     where: { id },
-    include: { _count: { select: { segments: true } } },
+    include: { segments: { orderBy: { orderIndex: "asc" } } },
   });
   if (!video || video.ownerId !== session!.user.id) {
     notFound();
   }
 
   return (
-    <div className="max-w-lg">
-      <VideoStatusView initialVideo={video} />
+    <div className="max-w-2xl">
+      <VideoQAView video={video} />
     </div>
   );
 }

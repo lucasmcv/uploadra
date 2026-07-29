@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getStaleFailureMessage } from "@/lib/processing-watchdog";
 import { VideoList } from "@/components/videos/VideoList";
 
 export default async function VideosPage() {
@@ -10,18 +9,6 @@ export default async function VideosPage() {
     where: { ownerId: session!.user.id },
     orderBy: { createdAt: "desc" },
   });
-
-  for (const video of videos) {
-    const staleMessage = getStaleFailureMessage(video.status, video.updatedAt);
-    if (staleMessage) {
-      await prisma.video.update({
-        where: { id: video.id },
-        data: { status: "failed", errorMessage: staleMessage },
-      });
-      video.status = "failed";
-      video.errorMessage = staleMessage;
-    }
-  }
 
   if (videos.length === 0) {
     return (

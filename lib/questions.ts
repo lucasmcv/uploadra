@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { QuestionMode } from "@/lib/types";
+import { generateContentWithRetry } from "@/lib/gemini-retry";
 
 export interface FragmentForQuestion {
   orderIndex: number;
@@ -12,11 +13,27 @@ export interface GeneratedQuestion {
   correctOptionIndex: number | null;
 }
 
-const OPEN_PROMPT_HEADER = `Para cada fragmento numerado abajo, generá una pregunta de comprensión cuya respuesta directa sea exactamente (o muy cercana a) el texto de ese fragmento. El fragmento funciona como la "respuesta" que la persona va a ver/escuchar justo después de leer la pregunta.
+// A single generation call covering too many fragments at once risks the
+// same quality degradation as one giant transcription request (see
+// lib/gemini-video-transcript.ts) — a long video/document can have well
+// over a hundred fragments, so those are split into batches this size
+// instead of one massive prompt.
+const BATCH_SIZE = 25;
+
+function batch<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));
+  return batches;
+}
+
+const SELF_CONTAINED_RULE = `- La pregunta debe ser AUTOCONTENIDA y específica: alguien que conoce el tema debe poder intentar responderla sin haber visto ni escuchado el fragmento — el video/audio está ahí solo para verificar o ampliar la respuesta, no para poder entender de qué se pregunta. Mencioná en la pregunta el tema o contexto concreto en juego (nunca preguntas vagas o genéricas como "¿qué se dice en este fragmento?" o "¿qué se menciona acá?"). Al mismo tiempo, el fragmento debe seguir siendo la respuesta DIRECTA y completa a esa pregunta — no alcanza con que estén relacionados temáticamente. Ejemplo: si el fragmento dice "el diagnóstico de diabetes se hace con una glucemia en ayunas mayor a 126 mg/dl en dos ocasiones", la pregunta correcta es "¿Con qué valor de glucemia en ayunas se diagnostica diabetes?" (específica, autocontenida, Y el fragmento la responde directamente) — NO "¿Cómo se hace el diagnóstico de diabetes?" (demasiado amplia: ese fragmento podría no ser la respuesta completa si hay otros criterios en otros fragmentos).`;
+
+const OPEN_PROMPT_HEADER = `Para cada fragmento numerado abajo, generá una pregunta de comprensión cuya respuesta directa y completa sea exactamente (o muy cercana a) el texto de ese fragmento — no una pregunta más amplia que ese fragmento solo responda parcialmente. El fragmento funciona como la "respuesta" que la persona va a ver/escuchar justo después de leer la pregunta.
 
 Reglas:
 - Una pregunta por fragmento, en el mismo idioma del fragmento.
 - La pregunta debe poder responderse con el contenido de ese fragmento específico, no con otros.
+${SELF_CONTAINED_RULE}
 - Si el fragmento es una oración declarativa, formulá una pregunta natural que lleve a esa respuesta.
 - La pregunta NUNCA debe incluir la respuesta, ni siquiera parcialmente, ni entre paréntesis.
 - Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string}, sin texto adicional, sin markdown.
@@ -24,12 +41,13 @@ Reglas:
 Fragmentos:
 `;
 
-const MCQ_PROMPT_HEADER = `Para cada fragmento numerado abajo, generá una pregunta de opción múltiple con 4 opciones (una correcta, tres distractores plausibles) cuya opción correcta sea exactamente (o muy cercana a) el texto de ese fragmento. El fragmento funciona como la "respuesta" que la persona va a ver/escuchar justo después de leer la pregunta y elegir una opción.
+const MCQ_PROMPT_HEADER = `Para cada fragmento numerado abajo, generá una pregunta de opción múltiple con 4 opciones (una correcta, tres distractores plausibles) cuya opción correcta sea exactamente (o muy cercana a) el texto de ese fragmento — no una pregunta más amplia que ese fragmento solo responda parcialmente. El fragmento funciona como la "respuesta" que la persona va a ver/escuchar justo después de leer la pregunta y elegir una opción.
 
 Reglas:
 - Una pregunta por fragmento, en el mismo idioma del fragmento.
 - Las 4 opciones deben ser plausibles entre sí (misma longitud/estilo aproximado), pero solo una correcta.
 - La opción correcta debe coincidir con el contenido de ese fragmento específico.
+${SELF_CONTAINED_RULE}
 - La pregunta NUNCA debe incluir la respuesta, ni siquiera parcialmente, ni entre paréntesis.
 - Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string, "options": [string, string, string, string], "correct_index": number}, sin texto adicional, sin markdown. correct_index es 0-based.
 
@@ -44,23 +62,30 @@ export async function generateQuestions(
   if (!apiKey || fragments.length === 0) return new Map();
 
   const client = new GoogleGenAI({ apiKey });
-  const numbered = fragments.map((s) => `${s.orderIndex}: ${s.text}`).join("\n");
-  const prompt = (mode === "mcq" ? MCQ_PROMPT_HEADER : OPEN_PROMPT_HEADER) + numbered;
+  const result = new Map<number, GeneratedQuestion>();
 
-  try {
-    const response = await client.models.generateContent({
-      model: "gemini-flash-latest",
-      contents: prompt,
-    });
+  for (const chunk of batch(fragments, BATCH_SIZE)) {
+    const numbered = chunk.map((s) => `${s.orderIndex}: ${s.text}`).join("\n");
+    const prompt = (mode === "mcq" ? MCQ_PROMPT_HEADER : OPEN_PROMPT_HEADER) + numbered;
 
-    const questions =
-      mode === "mcq" ? parseMcqQuestions(response.text ?? "") : parseOpenQuestions(response.text ?? "");
-    stripEmbeddedAnswerParens(questions);
-    return questions;
-  } catch (err) {
-    console.error("[questions] Falló la generación de preguntas:", err);
-    return new Map();
+    try {
+      const response = await generateContentWithRetry(client, {
+        model: "gemini-flash-latest",
+        contents: prompt,
+      });
+
+      const questions =
+        mode === "mcq" ? parseMcqQuestions(response.text ?? "") : parseOpenQuestions(response.text ?? "");
+      for (const [orderIndex, q] of questions) result.set(orderIndex, q);
+    } catch (err) {
+      console.error("[questions] Falló la generación de preguntas para un lote:", err);
+      // Continue with the remaining batches — backfillMissingQuestions
+      // covers whatever this one couldn't produce.
+    }
   }
+
+  stripEmbeddedAnswerParens(result);
+  return result;
 }
 
 /**
@@ -102,8 +127,10 @@ export function backfillMissingQuestions(
 
 const VERIFY_OPEN_PROMPT_HEADER = `Actuá como un revisor de control de calidad. Para cada par de fragmento y pregunta ya generados abajo, verificá que la pregunta corresponda de forma adecuada y exclusiva a ESE fragmento — su respuesta directa debe ser el contenido de ese fragmento específico, no el de otro fragmento ni algo genérico que podría aplicar a cualquiera.
 
-- Si la pregunta ya corresponde bien, devolvé el mismo texto tal cual.
-- Si no corresponde bien (es ambigua, encajaría mejor con otro fragmento, es demasiado genérica, o no tiene relación clara con el fragmento), reemplazala por una pregunta nueva que sí corresponda, respetando las mismas reglas de siempre: natural, respondible únicamente con el contenido de ese fragmento específico, nunca debe incluir la respuesta ni siquiera entre paréntesis.
+- Si la pregunta ya corresponde bien Y es autocontenida/específica, devolvé el mismo texto tal cual.
+- Si no corresponde bien (es ambigua, encajaría mejor con otro fragmento, no tiene relación clara con el fragmento, o es demasiado amplia y el fragmento solo la responde parcialmente), O si es vaga/genérica (del estilo "¿qué se dice en este fragmento?", "¿qué se menciona acá?", que no se puede intentar responder sin haber visto el fragmento), reemplazala por una pregunta nueva y específica que sí corresponda.
+${SELF_CONTAINED_RULE}
+- La pregunta nunca debe incluir la respuesta ni siquiera entre paréntesis.
 
 Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string}, uno por cada fragmento recibido, sin texto adicional, sin markdown.
 
@@ -112,8 +139,10 @@ Fragmentos y preguntas a revisar:
 
 const VERIFY_MCQ_PROMPT_HEADER = `Actuá como un revisor de control de calidad. Para cada fragmento con su pregunta de opción múltiple ya generada abajo, verificá que la opción marcada como correcta corresponda de forma adecuada y exclusiva al contenido de ESE fragmento específico, y que las 4 opciones sigan siendo plausibles entre sí.
 
-- Si ya está bien, devolvé la misma pregunta y opciones tal cual.
-- Si no corresponde bien (la opción "correcta" no coincide con el fragmento, es ambigua, o encajaría mejor con otro fragmento), generá una versión corregida: 4 opciones plausibles (mismo estilo/longitud aproximada), una sola correcta que coincida con ese fragmento específico. La pregunta nunca debe incluir la respuesta, ni siquiera entre paréntesis.
+- Si ya está bien Y la pregunta es autocontenida/específica, devolvé la misma pregunta y opciones tal cual.
+- Si no corresponde bien (la opción "correcta" no coincide con el fragmento, es ambigua, encajaría mejor con otro fragmento, o es demasiado amplia y el fragmento solo la responde parcialmente), O si la pregunta es vaga/genérica, generá una versión corregida: 4 opciones plausibles (mismo estilo/longitud aproximada), una sola correcta que coincida con ese fragmento específico.
+${SELF_CONTAINED_RULE}
+- La pregunta nunca debe incluir la respuesta, ni siquiera entre paréntesis.
 
 Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string, "options": [string, string, string, string], "correct_index": number}, uno por cada fragmento recibido, sin texto adicional, sin markdown. correct_index es 0-based.
 
@@ -140,38 +169,43 @@ export async function verifyQuestionCorrespondence(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || fragments.length === 0) return;
 
-  const lines = fragments
-    .map((fragment) => {
-      const q = questions.get(fragment.orderIndex);
-      if (!q) return null;
-      if (mode === "mcq" && q.options) {
-        return `${fragment.orderIndex}: FRAGMENTO: "${fragment.text}" | PREGUNTA ACTUAL: "${q.question}" | OPCIONES: ${JSON.stringify(q.options)} | CORRECTA_ACTUAL: ${q.correctOptionIndex}`;
-      }
-      return `${fragment.orderIndex}: FRAGMENTO: "${fragment.text}" | PREGUNTA ACTUAL: "${q.question}"`;
-    })
-    .filter((line): line is string => line !== null);
-
-  if (lines.length === 0) return;
-
   const client = new GoogleGenAI({ apiKey });
-  const prompt = (mode === "mcq" ? VERIFY_MCQ_PROMPT_HEADER : VERIFY_OPEN_PROMPT_HEADER) + lines.join("\n");
 
-  try {
-    const response = await client.models.generateContent({
-      model: "gemini-flash-latest",
-      contents: prompt,
-    });
+  for (const chunk of batch(fragments, BATCH_SIZE)) {
+    const lines = chunk
+      .map((fragment) => {
+        const q = questions.get(fragment.orderIndex);
+        if (!q) return null;
+        if (mode === "mcq" && q.options) {
+          return `${fragment.orderIndex}: FRAGMENTO: "${fragment.text}" | PREGUNTA ACTUAL: "${q.question}" | OPCIONES: ${JSON.stringify(q.options)} | CORRECTA_ACTUAL: ${q.correctOptionIndex}`;
+        }
+        return `${fragment.orderIndex}: FRAGMENTO: "${fragment.text}" | PREGUNTA ACTUAL: "${q.question}"`;
+      })
+      .filter((line): line is string => line !== null);
 
-    const reviewed =
-      mode === "mcq" ? parseMcqQuestions(response.text ?? "") : parseOpenQuestions(response.text ?? "");
+    if (lines.length === 0) continue;
 
-    for (const [orderIndex, q] of reviewed) {
-      questions.set(orderIndex, q);
+    const prompt = (mode === "mcq" ? VERIFY_MCQ_PROMPT_HEADER : VERIFY_OPEN_PROMPT_HEADER) + lines.join("\n");
+
+    try {
+      const response = await generateContentWithRetry(client, {
+        model: "gemini-flash-latest",
+        contents: prompt,
+      });
+
+      const reviewed =
+        mode === "mcq" ? parseMcqQuestions(response.text ?? "") : parseOpenQuestions(response.text ?? "");
+
+      for (const [orderIndex, q] of reviewed) {
+        questions.set(orderIndex, q);
+      }
+    } catch (err) {
+      console.error("[questions] Falló el checkpoint de verificación de correspondencia para un lote:", err);
+      // Keep the previously generated questions for this batch rather than losing them.
     }
-    stripEmbeddedAnswerParens(questions);
-  } catch (err) {
-    console.error("[questions] Falló el checkpoint de verificación de correspondencia:", err);
   }
+
+  stripEmbeddedAnswerParens(questions);
 }
 
 function extractJsonArray(text: string): unknown[] {

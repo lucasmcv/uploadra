@@ -1,12 +1,11 @@
 export const VideoStatus = {
-  Uploading: "uploading",
-  Transcribing: "transcribing",
   Ready: "ready",
   Failed: "failed",
 } as const;
 
 export type VideoStatus = (typeof VideoStatus)[keyof typeof VideoStatus];
 
+// Text documents still use open/mcq practice mode; videos no longer do.
 export const QuestionMode = {
   Open: "open",
   Mcq: "mcq",
@@ -14,23 +13,13 @@ export const QuestionMode = {
 
 export type QuestionMode = (typeof QuestionMode)[keyof typeof QuestionMode];
 
-export interface SegmentDTO {
+export interface VideoSegmentDTO {
   id: string;
   orderIndex: number;
   startTime: number;
   endTime: number;
   transcriptText: string;
   question: string | null;
-  options: string[] | null;
-  correctOptionIndex: number | null;
-}
-
-export interface AnswerDTO {
-  segmentId: string;
-  answerText: string | null;
-  selectedOptionIndex: number | null;
-  skipped: boolean;
-  submittedAt: string | null;
 }
 
 export interface AnswerState {
@@ -39,26 +28,12 @@ export interface AnswerState {
   skipped: boolean;
 }
 
-/** Minimal shape needed to render a question prompt (open or mcq). */
+/** Minimal shape needed to render a question prompt (open or mcq) — used by
+ * the text-document practice/review flow (components/player/QuestionCard.tsx). */
 export interface QuestionLike {
   question: string | null;
   options: string[] | null;
   correctOptionIndex: number | null;
-}
-
-/**
- * The subset of a native HTMLVideoElement's interface that the playback
- * hooks (usePracticePlayback, useSegmentSync) actually need. A real
- * <video> element satisfies this structurally with no adapter. A YouTube
- * IFrame-backed player implements it explicitly (see
- * components/player/YouTubePlayer.tsx) so both sources can drive the same
- * pause-at-boundary / segment-sync logic.
- */
-export interface MinimalPlayer {
-  currentTime: number;
-  readonly paused: boolean;
-  play(): void | Promise<void>;
-  pause(): void;
 }
 
 export const VideoSourceType = {

@@ -5,29 +5,27 @@ import { useRouter } from "next/navigation";
 
 export function UploadForm() {
   const router = useRouter();
-  const [source, setSource] = useState<"file" | "youtube">("file");
-  const [file, setFile] = useState<File | null>(null);
+  const [source, setSource] = useState<"youtube" | "file">("youtube");
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [youtubeTranscript, setYoutubeTranscript] = useState("");
-  const [showManualTranscript, setShowManualTranscript] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [transcript, setTranscript] = useState("");
   const [title, setTitle] = useState("");
-  const [questionMode, setQuestionMode] = useState<"open" | "mcq">("open");
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (source === "file" && !file) {
-      setError("Elegí un archivo de video o audio primero.");
-      return;
-    }
     if (source === "youtube" && !youtubeUrl.trim()) {
       setError("Pegá un link de YouTube primero.");
       return;
     }
-    if (source === "youtube" && showManualTranscript && !youtubeTranscript.trim()) {
-      setError("Pegá el texto de la transcripción de YouTube primero.");
+    if (source === "file" && !file) {
+      setError("Elegí un archivo de video o audio primero.");
+      return;
+    }
+    if (!transcript.trim()) {
+      setError("Pegá la transcripción con tiempos primero.");
       return;
     }
 
@@ -35,16 +33,13 @@ export function UploadForm() {
     setUploading(true);
 
     const formData = new FormData();
-    if (source === "file") {
-      formData.append("file", file!);
-    } else {
+    if (source === "youtube") {
       formData.append("youtubeUrl", youtubeUrl.trim());
-      if (showManualTranscript) {
-        formData.append("youtubeTranscript", youtubeTranscript);
-      }
+    } else {
+      formData.append("file", file!);
     }
+    formData.append("transcript", transcript);
     if (title.trim()) formData.append("title", title.trim());
-    formData.append("questionMode", questionMode);
 
     const res = await fetch("/api/videos", { method: "POST", body: formData });
 
@@ -52,7 +47,7 @@ export function UploadForm() {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setError(body.error ?? "No se pudo subir el video.");
+      setError(body.error ?? "No se pudo crear el video.");
       return;
     }
 
@@ -69,23 +64,37 @@ export function UploadForm() {
           <input
             type="radio"
             name="source"
-            checked={source === "file"}
-            onChange={() => setSource("file")}
-          />
-          Subir archivo
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="source"
             checked={source === "youtube"}
             onChange={() => setSource("youtube")}
           />
           Link de YouTube
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="radio"
+            name="source"
+            checked={source === "file"}
+            onChange={() => setSource("file")}
+          />
+          Subir archivo de video/audio
+        </label>
       </fieldset>
 
-      {source === "file" ? (
+      {source === "youtube" ? (
+        <div className="flex flex-col gap-1">
+          <label htmlFor="youtubeUrl" className="text-sm font-medium">
+            Link de YouTube
+          </label>
+          <input
+            id="youtubeUrl"
+            type="url"
+            placeholder="https://www.youtube.com/watch?v=..."
+            value={youtubeUrl}
+            onChange={(e) => setYoutubeUrl(e.target.value)}
+            className="border rounded px-3 py-2"
+          />
+        </div>
+      ) : (
         <div className="flex flex-col gap-1">
           <label htmlFor="file" className="text-sm font-medium">
             Archivo de video o audio
@@ -98,90 +107,56 @@ export function UploadForm() {
             className="border rounded px-3 py-2"
           />
         </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="youtubeUrl" className="text-sm font-medium">
-              Link de YouTube
-            </label>
-            <input
-              id="youtubeUrl"
-              type="url"
-              placeholder="https://www.youtube.com/watch?v=..."
-              value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              className="border rounded px-3 py-2"
-            />
-            <p className="text-xs text-gray-500">
-              Se transcribe automáticamente con IA; el reproductor sigue siendo el embed oficial de
-              YouTube (no se descarga ni se re-aloja nada).
-            </p>
-          </div>
-
-          {!showManualTranscript ? (
-            <button
-              type="button"
-              onClick={() => setShowManualTranscript(true)}
-              className="text-xs text-gray-500 underline self-start"
-            >
-              ¿Falló la transcripción automática? Pegarla manualmente
-            </button>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={() => setShowManualTranscript(false)}
-                className="text-xs text-gray-500 underline self-start"
-              >
-                Volver a la transcripción automática
-              </button>
-              <div className="text-xs text-gray-600 bg-gray-50 border rounded p-3 flex flex-col gap-2">
-                <p className="font-medium text-gray-700">Opción 1: Usar la transcripción oficial de YouTube</p>
-                <ol className="list-decimal list-inside flex flex-col gap-0.5 ml-1">
-                  <li>Abrí el video en YouTube, en otra pestaña.</li>
-                  <li>
-                    Debajo del video, buscá el botón <strong>&quot;Mostrar transcripción&quot;</strong>{" "}
-                    (si no lo ves, desplegá primero &quot;Más&quot;).
-                  </li>
-                  <li>Hacé clic ahí para abrir el panel con el texto y los tiempos.</li>
-                  <li>
-                    Hacé clic dentro del panel, seleccioná todo (Ctrl+A) y copialo (Ctrl+C).
-                  </li>
-                </ol>
-                <p className="font-medium text-gray-700">Opción 2: Usar TurboScribe (para videos sin transcripción oficial)</p>
-                <ol className="list-decimal list-inside flex flex-col gap-0.5 ml-1">
-                  <li>
-                    <button
-                      type="button"
-                      onClick={() => window.open("https://turboscribe.ai/", "_blank")}
-                      className="text-blue-600 underline"
-                    >
-                      Abrí TurboScribe en una nueva pestaña
-                    </button>{" "}
-                    y pegá el link del video.
-                  </li>
-                  <li>Dejá que transcriba (tarda 1-3 minutos según la duración).</li>
-                  <li>Copiá el texto generado (con los tiempos entre paréntesis como &quot;(0:15) texto...&quot;).</li>
-                </ol>
-                <p className="text-gray-600">
-                  Pegá aquí la transcripción de cualquiera de las dos opciones:
-                </p>
-              </div>
-              <label htmlFor="youtubeTranscript" className="text-sm font-medium">
-                Transcripción pegada
-              </label>
-              <textarea
-                id="youtubeTranscript"
-                value={youtubeTranscript}
-                onChange={(e) => setYoutubeTranscript(e.target.value)}
-                rows={8}
-                placeholder={"0:00\ntexto del primer segmento\n0:15\ntexto del segmento siguiente...\n\no\n\n(0:00) Buen día\n(0:15) Texto siguiente..."}
-                className="border rounded px-3 py-2 font-mono text-xs"
-              />
-            </div>
-          )}
-        </div>
       )}
+
+      <div className="flex flex-col gap-1">
+        <div className="text-sm text-gray-700 bg-gray-50 border rounded p-4 flex flex-col gap-2">
+          <p className="font-semibold text-gray-800">
+            Paso a paso para conseguir la transcripción (no hace falta saber de tecnología, son 5 pasos):
+          </p>
+          <button
+            type="button"
+            onClick={() => window.open("https://turboscribe.ai/", "_blank")}
+            className="bg-blue-600 text-white rounded px-4 py-2 font-medium self-start"
+          >
+            1. Abrir TurboScribe en una ventana nueva
+          </button>
+          <ol start={2} className="list-decimal list-inside flex flex-col gap-1.5 ml-1">
+            <li>
+              En esa pestaña nueva, pegá el link de YouTube o subí el mismo archivo que vas a usar acá,
+              y esperá a que termine (tarda entre 1 y 3 minutos — vas a ver aparecer el texto solo).
+            </li>
+            <li>
+              Hacé clic con el mouse en cualquier parte del texto que apareció, y después apretá al
+              mismo tiempo las teclas <strong>Ctrl</strong> y <strong>A</strong> (esto selecciona todo el
+              texto — se va a ver marcado/resaltado).
+            </li>
+            <li>
+              Con el texto todavía seleccionado, apretá al mismo tiempo <strong>Ctrl</strong> y{" "}
+              <strong>C</strong> (esto lo copia — no vas a ver ningún cambio en la pantalla, es normal).
+            </li>
+            <li>
+              Volvé a esta página, hacé clic dentro del cuadro de abajo (&quot;Transcripción
+              pegada&quot;) y apretá al mismo tiempo <strong>Ctrl</strong> y <strong>V</strong> (esto
+              pega el texto copiado).
+            </li>
+          </ol>
+          <p className="text-gray-600 text-xs">
+            No hace falta revisar ni corregir nada del texto — se pega tal cual aparece en TurboScribe.
+          </p>
+        </div>
+        <label htmlFor="transcript" className="text-sm font-medium">
+          Transcripción pegada
+        </label>
+        <textarea
+          id="transcript"
+          value={transcript}
+          onChange={(e) => setTranscript(e.target.value)}
+          rows={8}
+          placeholder="Hacé clic acá y pegá con Ctrl+V el texto que copiaste de TurboScribe..."
+          className="border rounded px-3 py-2 font-mono text-xs"
+        />
+      </div>
 
       <div className="flex flex-col gap-1">
         <label htmlFor="title" className="text-sm font-medium">
@@ -195,36 +170,14 @@ export function UploadForm() {
           className="border rounded px-3 py-2"
         />
       </div>
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium mb-1">Tipo de pregunta</legend>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="questionMode"
-            value="open"
-            checked={questionMode === "open"}
-            onChange={() => setQuestionMode("open")}
-          />
-          Preguntas abiertas (escribís la respuesta)
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="questionMode"
-            value="mcq"
-            checked={questionMode === "mcq"}
-            onChange={() => setQuestionMode("mcq")}
-          />
-          Opción múltiple (A/B/C/D)
-        </label>
-      </fieldset>
+
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button
         type="submit"
         disabled={uploading}
         className="bg-black text-white rounded px-3 py-2 disabled:opacity-50 w-fit"
       >
-        {uploading ? "Subiendo…" : "Subir"}
+        {uploading ? "Creando…" : "Crear"}
       </button>
     </form>
   );
