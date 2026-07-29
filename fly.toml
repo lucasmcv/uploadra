@@ -7,7 +7,7 @@
 # app-specific settings (port, health check) `fly launch` won't know.
 
 app = "dictado-web"           # change if this name is taken on Fly.io
-primary_region = "REGION_AQUI" # run `fly platform regions` and pick the closest to your users
+primary_region = "gru"        # Sao Paulo, Brazil — closest Fly.io region to Argentina
 
 [build]
   dockerfile = "Dockerfile"

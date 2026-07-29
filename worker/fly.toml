@@ -7,7 +7,7 @@
 # blindly, since it was written without a Fly.io account to verify against.
 
 app = "dictado-worker"
-primary_region = "REGION_AQUI" # same region as dictado-web, for low-latency private networking
+primary_region = "gru"        # Sao Paulo, Brazil — same as dictado-web, for low-latency private networking
 
 [build]
   dockerfile = "Dockerfile"
