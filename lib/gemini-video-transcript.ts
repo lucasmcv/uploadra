@@ -179,3 +179,50 @@ export async function transcribeYoutubeWithGemini(youtubeUrl: string): Promise<P
     text: segment.text,
   }));
 }
+
+export async function normalizeTranscriptWithGemini(
+  rawTranscriptText: string
+): Promise<ParsedTranscriptSegment[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY no está configurada.");
+  }
+  const client = new GoogleGenAI({ apiKey });
+
+  const prompt = `Te voy a pasar una transcripción pegada desde un servicio de transcripción (YouTube, TurboScribe, u otro).
+Puede estar en varios formatos posibles: (0:15) texto, 0:15 texto, [0:15] texto, etc.
+
+Tu tarea ÚNICAMENTE es reformatear ese texto a JSON, sin cambiar NI UN SEGUNDO los tiempos.
+Los tiempos deben ser EXTRAÍDOS LITERALMENTE de lo que ves, sin ajustes ni correcciones.
+
+Devolvé ÚNICAMENTE un JSON array con este formato exacto, sin texto adicional ni bloques de código:
+[{"start": "MM:SS", "text": "..."}, {"start": "MM:SS", "text": "..."}, ...]
+
+Donde "start" es el tiempo en formato MM:SS (o H:MM:SS si el video es muy largo), extraído exactamente como aparece en el original.
+Si no hay tiempos en una línea, ignora esa línea.
+Si hay múltiples líneas de texto para un mismo timestamp, combínalas en un solo elemento.
+
+Aquí es la transcripción pegada:
+${rawTranscriptText}`;
+
+  const response = await generateContentWithRetry(client, {
+    model: MODEL,
+    contents: [{ text: prompt }],
+  });
+
+  const parsedSegments = parseTranscriptJson(response.text ?? "");
+  if (parsedSegments.length === 0) {
+    throw new Error(
+      "No se pudo extraer segmentos con tiempos de la transcripción pegada. Asegurate de que incluya tiempos en alguno de estos formatos: (0:15), [0:15], o 0:15"
+    );
+  }
+
+  return parsedSegments.map((s, i) => ({
+    startTime: timestampToSeconds(s.start),
+    endTime:
+      i < parsedSegments.length - 1
+        ? timestampToSeconds(parsedSegments[i + 1].start)
+        : timestampToSeconds(s.start) + LAST_SEGMENT_SPAN_SECONDS,
+    text: s.text.trim(),
+  }));
+}

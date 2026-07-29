@@ -7,7 +7,7 @@ import { QuestionMode, VideoSourceType, VideoStatus } from "@/lib/types";
 import { triggerTranscription } from "@/lib/worker-client";
 import { extractYouTubeVideoId } from "@/lib/youtube";
 import { parseYoutubeTranscript, type ParsedTranscriptSegment } from "@/lib/youtube-transcript";
-import { transcribeYoutubeWithGemini } from "@/lib/gemini-video-transcript";
+import { transcribeYoutubeWithGemini, normalizeTranscriptWithGemini } from "@/lib/gemini-video-transcript";
 import { backfillMissingQuestions, generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
 import { billingBlockResponse } from "@/lib/billing";
 
@@ -121,17 +121,23 @@ async function handleYouTubeTranscriptUpload(
     );
   }
 
-  const parsedSegments = parseYoutubeTranscript(transcriptText);
+  let parsedSegments = parseYoutubeTranscript(transcriptText);
+
   if (parsedSegments.length === 0) {
-    return NextResponse.json(
-      {
-        error:
-          "No pudimos reconocer texto con marcas de tiempo en lo que pegaste. Asegúrate de pegar " +
-          "exactamente lo que copiaste de: (1) el panel 'Mostrar transcripción' de YouTube (con tiempos incluidos), " +
-          "o (2) la salida de TurboScribe con tiempos entre paréntesis como '(0:15) texto...'",
-      },
-      { status: 400 }
-    );
+    try {
+      parsedSegments = await normalizeTranscriptWithGemini(transcriptText);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error:
+            "No pudimos reconocer texto con marcas de tiempo en lo que pegaste. Asegúrate de pegar " +
+            "exactamente lo que copiaste de: (1) el panel 'Mostrar transcripción' de YouTube (con tiempos incluidos), " +
+            "o (2) la salida de TurboScribe con tiempos entre paréntesis como '(0:15) texto...'. " +
+            `Detalles: ${err instanceof Error ? err.message : "Error desconocido"}`,
+        },
+        { status: 400 }
+      );
+    }
   }
 
   const videoId = randomUUID();
