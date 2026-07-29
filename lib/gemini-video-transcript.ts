@@ -27,6 +27,44 @@ const CHUNK_SECONDS = 8 * 60;
 // off an unbounded number of chunk requests.
 const MAX_VIDEO_SECONDS = 3 * 60 * 60;
 
+// Gemini's rate/spend limits are shared across the whole platform (one
+// Google Cloud project), not per user — so a burst of uploads from other
+// users can 429 a request from someone who hasn't uploaded anything today.
+// Gemini's own 429 response tells us exactly how long to wait
+// ("retryDelay"), so retrying patiently turns that into "this video takes
+// a bit longer" instead of an outright failure. This is safe because
+// transcription already runs in the background with a polling UI — extra
+// wait time here isn't blocking any HTTP request.
+const MAX_RETRY_ATTEMPTS = 5;
+const DEFAULT_RETRY_DELAY_SECONDS = 30;
+
+function isRateLimitError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('"code":429') || message.includes("RESOURCE_EXHAUSTED");
+}
+
+function parseRetryDelaySeconds(err: unknown): number {
+  const message = err instanceof Error ? err.message : String(err);
+  const match = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(message);
+  return match ? parseFloat(match[1]) : DEFAULT_RETRY_DELAY_SECONDS;
+}
+
+async function generateContentWithRetry(
+  client: GoogleGenAI,
+  params: Parameters<GoogleGenAI["models"]["generateContent"]>[0]
+): ReturnType<GoogleGenAI["models"]["generateContent"]> {
+  for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await client.models.generateContent(params);
+    } catch (err) {
+      if (!isRateLimitError(err) || attempt === MAX_RETRY_ATTEMPTS) throw err;
+      const delaySeconds = parseRetryDelaySeconds(err);
+      await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 const TRANSCRIBE_PROMPT = `Transcribí el audio hablado de este video, dividido en segmentos de habla natural (frases u oraciones completas, ni muy cortos ni muy largos, como subtítulos). Devolvé ÚNICAMENTE un JSON array, sin texto adicional ni bloques de código, con este formato exacto:
 [{"start": "MM:SS", "text": "..."}]
 Los tiempos van en formato MM:SS (o H:MM:SS si corresponde) y marcan el inicio de cada segmento. El texto es la transcripción literal de lo dicho, en el idioma original del audio. Si no hay audio hablado, devolvé un array vacío [].`;
@@ -53,7 +91,7 @@ function parseTranscriptJson(responseText: string): { start: string; text: strin
 }
 
 async function getVideoDurationSeconds(client: GoogleGenAI, youtubeUrl: string): Promise<number> {
-  const response = await client.models.generateContent({
+  const response = await generateContentWithRetry(client, {
     model: MODEL,
     contents: [
       { fileData: { fileUri: youtubeUrl } },
@@ -68,7 +106,7 @@ async function getVideoDurationSeconds(client: GoogleGenAI, youtubeUrl: string):
 }
 
 async function transcribeWholeVideo(client: GoogleGenAI, youtubeUrl: string): Promise<RawSegment[]> {
-  const response = await client.models.generateContent({
+  const response = await generateContentWithRetry(client, {
     model: MODEL,
     contents: [{ fileData: { fileUri: youtubeUrl } }, { text: TRANSCRIBE_PROMPT }],
   });
@@ -88,7 +126,7 @@ async function transcribeChunk(
 
 Este video se está procesando en partes. Esta parte corresponde exactamente al intervalo desde el segundo ${startSeconds} hasta el segundo ${endSeconds} del video ORIGINAL completo. Los tiempos "start" que devuelvas deben ser ABSOLUTOS respecto al video original completo — por ejemplo, el primer segmento de esta parte debe tener un "start" cercano a ${startSeconds} segundos, no 0.`;
 
-  const response = await client.models.generateContent({
+  const response = await generateContentWithRetry(client, {
     model: MODEL,
     contents: [
       {

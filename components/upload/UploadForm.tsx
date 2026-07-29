@@ -135,9 +135,9 @@ export function UploadForm() {
               >
                 Volver a la transcripción automática
               </button>
-              <div className="text-xs text-gray-600 bg-gray-50 border rounded p-3 flex flex-col gap-1">
-                <p className="font-medium text-gray-700">Cómo conseguir el texto (1 minuto):</p>
-                <ol className="list-decimal list-inside flex flex-col gap-0.5">
+              <div className="text-xs text-gray-600 bg-gray-50 border rounded p-3 flex flex-col gap-2">
+                <p className="font-medium text-gray-700">Opción 1: Usar la transcripción oficial de YouTube</p>
+                <ol className="list-decimal list-inside flex flex-col gap-0.5 ml-1">
                   <li>Abrí el video en YouTube, en otra pestaña.</li>
                   <li>
                     Debajo del video, buscá el botón <strong>&quot;Mostrar transcripción&quot;</strong>{" "}
@@ -147,8 +147,25 @@ export function UploadForm() {
                   <li>
                     Hacé clic dentro del panel, seleccioná todo (Ctrl+A) y copialo (Ctrl+C).
                   </li>
-                  <li>Pegalo (Ctrl+V) en el cuadro de abajo.</li>
                 </ol>
+                <p className="font-medium text-gray-700">Opción 2: Usar TurboScribe (para videos sin transcripción oficial)</p>
+                <ol className="list-decimal list-inside flex flex-col gap-0.5 ml-1">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => window.open("https://turboscribe.ai/", "_blank")}
+                      className="text-blue-600 underline"
+                    >
+                      Abrí TurboScribe en una nueva pestaña
+                    </button>{" "}
+                    y pegá el link del video.
+                  </li>
+                  <li>Dejá que transcriba (tarda 1-3 minutos según la duración).</li>
+                  <li>Copiá el texto generado (con los tiempos entre paréntesis como &quot;(0:15) texto...&quot;).</li>
+                </ol>
+                <p className="text-gray-600">
+                  Pegá aquí la transcripción de cualquiera de las dos opciones:
+                </p>
               </div>
               <label htmlFor="youtubeTranscript" className="text-sm font-medium">
                 Transcripción pegada
@@ -158,7 +175,7 @@ export function UploadForm() {
                 value={youtubeTranscript}
                 onChange={(e) => setYoutubeTranscript(e.target.value)}
                 rows={8}
-                placeholder={"0:00\ntexto del primer segmento\n0:15\ntexto del segmento siguiente..."}
+                placeholder={"0:00\ntexto del primer segmento\n0:15\ntexto del segmento siguiente...\n\no\n\n(0:00) Buen día\n(0:15) Texto siguiente..."}
                 className="border rounded px-3 py-2 font-mono text-xs"
               />
             </div>
