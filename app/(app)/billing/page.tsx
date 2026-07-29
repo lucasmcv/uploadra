@@ -11,7 +11,7 @@ interface BillingStatus {
 }
 
 function formatCents(cents: number): string {
-  return (cents / 100).toLocaleString("es-AR", { style: "currency", currency: "ARS" });
+  return (cents / 100).toLocaleString("es-AR", { style: "currency", currency: "USD" });
 }
 
 export default function BillingPage() {

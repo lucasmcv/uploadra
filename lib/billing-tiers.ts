@@ -1,13 +1,18 @@
 // Pure, no-I/O tier calculation — the single source of truth for "what
 // should every user currently be paying", driven only by the total count
 // of registered accounts. Free below 100 users; from 100 on, everyone pays
-// the same amount, which steps up by 1000 ARS every additional 100 users,
-// capped at 30000 ARS/month (reached at 3000+ users).
+// the same amount, which steps up by 1 USD every additional 100 users,
+// capped at 30 USD/month (reached at 3000+ users).
+//
+// Priced in USD (not ARS) specifically to avoid Argentine peso devaluation
+// risk: hosting/proxy/Stripe costs are all USD-denominated, so a fixed ARS
+// price could stop covering real costs after enough inflation, while a USD
+// price tracks them directly.
 
 export const FREE_THRESHOLD_USERS = 100;
 export const STEP_USERS = 100;
-export const STEP_PRICE_CENTS = 100_000; // 1000 ARS
-export const MAX_PRICE_CENTS = 3_000_000; // 30000 ARS
+export const STEP_PRICE_CENTS = 100; // 1 USD
+export const MAX_PRICE_CENTS = 3_000; // 30 USD
 
 export function getCurrentRequiredTierCents(userCount: number): number {
   if (userCount < FREE_THRESHOLD_USERS) return 0;
@@ -16,7 +21,7 @@ export function getCurrentRequiredTierCents(userCount: number): number {
 }
 
 export interface StripeTierPriceData {
-  currency: "ars";
+  currency: "usd";
   unit_amount: number;
   recurring: { interval: "month" };
   product: string;
@@ -35,7 +40,7 @@ export function getTierPriceData(cents: number): StripeTierPriceData {
     throw new Error("STRIPE_PRODUCT_ID no está configurado.");
   }
   return {
-    currency: "ars",
+    currency: "usd",
     unit_amount: cents,
     recurring: { interval: "month" },
     product: productId,
