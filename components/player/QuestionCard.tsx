@@ -115,7 +115,8 @@ function OpenBody({
         <button
           type="button"
           onClick={() => onSubmitOpen(value)}
-          className="text-sm bg-black text-white rounded px-3 py-1"
+          disabled={value.trim() === ""}
+          className="text-sm bg-black text-white rounded px-3 py-1 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Continuar
         </button>
