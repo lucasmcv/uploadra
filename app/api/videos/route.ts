@@ -126,8 +126,9 @@ async function handleYouTubeTranscriptUpload(
     return NextResponse.json(
       {
         error:
-          "No pudimos reconocer texto con marcas de tiempo en lo que pegaste. Asegurate de copiar el " +
-          "panel de transcripción de YouTube tal cual (con los tiempos incluidos) y volver a pegarlo.",
+          "No pudimos reconocer texto con marcas de tiempo en lo que pegaste. Asegúrate de pegar " +
+          "exactamente lo que copiaste de: (1) el panel 'Mostrar transcripción' de YouTube (con tiempos incluidos), " +
+          "o (2) la salida de TurboScribe con tiempos entre paréntesis como '(0:15) texto...'",
       },
       { status: 400 }
     );
