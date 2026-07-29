@@ -6,6 +6,8 @@ import { getStorageDriver } from "@/lib/storage";
 import { QuestionMode, VideoSourceType, VideoStatus } from "@/lib/types";
 import { triggerTranscription } from "@/lib/worker-client";
 import { extractYouTubeVideoId } from "@/lib/youtube";
+import { parseYoutubeTranscript } from "@/lib/youtube-transcript";
+import { backfillMissingQuestions, generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
 import { billingBlockResponse } from "@/lib/billing";
 
 export async function GET() {
@@ -38,10 +40,105 @@ export async function POST(req: NextRequest) {
 
   const youtubeUrlInput = formData.get("youtubeUrl");
   if (typeof youtubeUrlInput === "string" && youtubeUrlInput.trim()) {
+    const transcriptInput = formData.get("youtubeTranscript");
+    if (typeof transcriptInput === "string" && transcriptInput.trim()) {
+      return handleYouTubeTranscriptUpload(
+        youtubeUrlInput.trim(),
+        transcriptInput,
+        session.user.id,
+        titleOverride,
+        questionMode
+      );
+    }
     return handleYouTubeUpload(youtubeUrlInput.trim(), session.user.id, titleOverride, questionMode);
   }
 
   return handleFileUpload(formData, session.user.id, titleOverride, questionMode);
+}
+
+async function handleYouTubeTranscriptUpload(
+  youtubeUrl: string,
+  transcriptText: string,
+  ownerId: string,
+  titleOverride: FormDataEntryValue | null,
+  questionMode: QuestionMode
+) {
+  const youtubeVideoId = extractYouTubeVideoId(youtubeUrl);
+  if (!youtubeVideoId) {
+    return NextResponse.json(
+      { error: "No se pudo reconocer un ID de video de YouTube en ese link." },
+      { status: 400 }
+    );
+  }
+
+  const parsedSegments = parseYoutubeTranscript(transcriptText);
+  if (parsedSegments.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "No pudimos reconocer texto con marcas de tiempo en lo que pegaste. Asegurate de copiar el " +
+          "panel de transcripción de YouTube tal cual (con los tiempos incluidos) y volver a pegarlo.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const videoId = randomUUID();
+  const video = await prisma.video.create({
+    data: {
+      id: videoId,
+      ownerId,
+      title:
+        typeof titleOverride === "string" && titleOverride.trim()
+          ? titleOverride
+          : `Video de YouTube (${youtubeVideoId})`,
+      sourceType: VideoSourceType.YouTube,
+      youtubeVideoId,
+      status: VideoStatus.Transcribing,
+      questionMode,
+    },
+  });
+
+  try {
+    const fragmentsForQuestions = parsedSegments.map((s, i) => ({ orderIndex: i, text: s.text }));
+    const questions = await generateQuestions(fragmentsForQuestions, questionMode);
+    backfillMissingQuestions(fragmentsForQuestions, questions);
+    await verifyQuestionCorrespondence(fragmentsForQuestions, questions, questionMode);
+
+    await prisma.$transaction([
+      prisma.segment.createMany({
+        data: parsedSegments.map((s, i) => {
+          const generated = questions.get(i);
+          return {
+            videoId: video.id,
+            orderIndex: i,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            transcriptText: s.text,
+            question: generated?.question ?? null,
+            options: generated?.options ? JSON.stringify(generated.options) : null,
+            correctOptionIndex: generated?.correctOptionIndex ?? null,
+          };
+        }),
+      }),
+      prisma.video.update({ where: { id: video.id }, data: { status: VideoStatus.Ready } }),
+    ]);
+  } catch (err) {
+    await prisma.video.update({
+      where: { id: video.id },
+      data: {
+        status: VideoStatus.Failed,
+        errorMessage: err instanceof Error ? err.message : "No se pudieron generar las preguntas.",
+      },
+    });
+    return NextResponse.json(
+      { error: "El video se guardó, pero falló la generación de preguntas a partir de la transcripción." },
+      { status: 502 }
+    );
+  }
+
+  const ready = await prisma.video.findUnique({ where: { id: video.id } });
+  return NextResponse.json({ video: ready }, { status: 201 });
 }
 
 async function handleYouTubeUpload(

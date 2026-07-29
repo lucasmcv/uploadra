@@ -8,6 +8,8 @@ export function UploadForm() {
   const [source, setSource] = useState<"file" | "youtube">("file");
   const [file, setFile] = useState<File | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeTranscript, setYoutubeTranscript] = useState("");
+  const [youtubeMode, setYoutubeMode] = useState<"transcript" | "auto">("transcript");
   const [title, setTitle] = useState("");
   const [questionMode, setQuestionMode] = useState<"open" | "mcq">("open");
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +26,10 @@ export function UploadForm() {
       setError("Pegá un link de YouTube primero.");
       return;
     }
+    if (source === "youtube" && youtubeMode === "transcript" && !youtubeTranscript.trim()) {
+      setError("Pegá el texto de la transcripción de YouTube primero.");
+      return;
+    }
 
     setError(null);
     setUploading(true);
@@ -33,6 +39,9 @@ export function UploadForm() {
       formData.append("file", file!);
     } else {
       formData.append("youtubeUrl", youtubeUrl.trim());
+      if (youtubeMode === "transcript") {
+        formData.append("youtubeTranscript", youtubeTranscript);
+      }
     }
     if (title.trim()) formData.append("title", title.trim());
     formData.append("questionMode", questionMode);
@@ -90,22 +99,84 @@ export function UploadForm() {
           />
         </div>
       ) : (
-        <div className="flex flex-col gap-1">
-          <label htmlFor="youtubeUrl" className="text-sm font-medium">
-            Link de YouTube
-          </label>
-          <input
-            id="youtubeUrl"
-            type="url"
-            placeholder="https://www.youtube.com/watch?v=..."
-            value={youtubeUrl}
-            onChange={(e) => setYoutubeUrl(e.target.value)}
-            className="border rounded px-3 py-2"
-          />
-          <p className="text-xs text-gray-500">
-            El video se reproduce embebido desde YouTube (no se descarga ni se re-aloja); solo el
-            audio se procesa de forma transitoria para transcribirlo.
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="youtubeUrl" className="text-sm font-medium">
+              Link de YouTube
+            </label>
+            <input
+              id="youtubeUrl"
+              type="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+              value={youtubeUrl}
+              onChange={(e) => setYoutubeUrl(e.target.value)}
+              className="border rounded px-3 py-2"
+            />
+          </div>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium mb-1">Cómo obtener el texto</legend>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="youtubeMode"
+                checked={youtubeMode === "transcript"}
+                onChange={() => setYoutubeMode("transcript")}
+              />
+              Pegar la transcripción de YouTube (recomendado)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="youtubeMode"
+                checked={youtubeMode === "auto"}
+                onChange={() => setYoutubeMode("auto")}
+              />
+              Transcribir automáticamente (puede fallar por bloqueo de YouTube)
+            </label>
+          </fieldset>
+
+          {youtubeMode === "transcript" ? (
+            <div className="flex flex-col gap-1">
+              <div className="text-xs text-gray-600 bg-gray-50 border rounded p-3 flex flex-col gap-1">
+                <p className="font-medium text-gray-700">Cómo conseguir el texto (1 minuto):</p>
+                <ol className="list-decimal list-inside flex flex-col gap-0.5">
+                  <li>Abrí el video en YouTube, en otra pestaña.</li>
+                  <li>
+                    Debajo del video, buscá el botón <strong>&quot;Mostrar transcripción&quot;</strong>{" "}
+                    (si no lo ves, desplegá primero &quot;Más&quot;).
+                  </li>
+                  <li>Hacé clic ahí para abrir el panel con el texto y los tiempos.</li>
+                  <li>
+                    Hacé clic dentro del panel, seleccioná todo (Ctrl+A) y copialo (Ctrl+C).
+                  </li>
+                  <li>Pegalo (Ctrl+V) en el cuadro de abajo.</li>
+                </ol>
+              </div>
+              <label htmlFor="youtubeTranscript" className="text-sm font-medium">
+                Transcripción pegada
+              </label>
+              <textarea
+                id="youtubeTranscript"
+                value={youtubeTranscript}
+                onChange={(e) => setYoutubeTranscript(e.target.value)}
+                rows={8}
+                placeholder={"0:00\ntexto del primer segmento\n0:15\ntexto del segmento siguiente..."}
+                className="border rounded px-3 py-2 font-mono text-xs"
+              />
+              <p className="text-xs text-gray-500">
+                El video se reproduce embebido desde YouTube; nunca se descarga ni se re-aloja nada,
+                así que este camino no depende de que YouTube bloquee descargas automáticas.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              El video se reproduce embebido desde YouTube (no se descarga ni se re-aloja); solo el
+              audio se procesa de forma transitoria para transcribirlo. YouTube a veces bloquea esta
+              descarga automática ("Sign in to confirm you're not a bot"); si eso pasa, usá la opción
+              de pegar la transcripción de arriba.
+            </p>
+          )}
         </div>
       )}
 
