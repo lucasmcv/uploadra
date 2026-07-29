@@ -13,3 +13,8 @@ yt-dlp
 # checks — without this, extraction fails even with valid cookies and a
 # JS runtime (deno) present.
 yt-dlp-ejs
+# Proof-of-origin token provider — a second, independent line of defense
+# against YouTube's bot-check (unlike cookies/player-client tricks, this
+# doesn't rely on IP reputation). Talks to the bgutil-pot service over
+# HTTP (see docker-compose.yml, worker/config.py, worker/youtube_ingest.py).
+bgutil-ytdlp-pot-provider

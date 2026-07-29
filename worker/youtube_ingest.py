@@ -38,6 +38,10 @@ def download_audio_transiently(youtube_video_id: str) -> str:
     }
     if settings.yt_dlp_cookies_file:
         ydl_opts["cookiefile"] = settings.yt_dlp_cookies_file
+    if settings.bgutil_pot_base_url:
+        ydl_opts["extractor_args"] = {
+            "youtubepot-bgutilhttp": {"base_url": [settings.bgutil_pot_base_url]}
+        }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])

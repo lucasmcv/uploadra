@@ -35,5 +35,10 @@ class Settings:
     # requiring this for the app to work at all).
     yt_dlp_cookies_file: str = os.environ.get("YT_DLP_COOKIES_FILE", "")
 
+    # Base URL of the bgutil-ytdlp-pot-provider HTTP server (a separate
+    # container — see docker-compose.yml's bgutil-pot service). Empty
+    # disables it, falling back to cookies/player-client alone.
+    bgutil_pot_base_url: str = os.environ.get("BGUTIL_POT_BASE_URL", "")
+
 
 settings = Settings()

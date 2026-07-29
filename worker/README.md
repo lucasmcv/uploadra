@@ -55,6 +55,7 @@ La primera vez descarga los pesos del modelo Whisper elegido desde Hugging Face
 - `S3_*`: solo si `STORAGE_DRIVER=s3` (mismos valores que la app)
 - `INTERNAL_CALLBACK_SECRET`: debe coincidir con el de la app Next.js
 - `YT_DLP_COOKIES_FILE`: opcional, ver más abajo — solo lo necesita el worker RQ (es quien corre yt-dlp)
+- `BGUTIL_POT_BASE_URL`: opcional, ver más abajo — URL del servicio `bgutil-pot`
 
 ## Videos de YouTube
 
@@ -83,6 +84,23 @@ loguearse en YouTube ni saber que esto existe, solo pegan el link.
 Si esa cuenta dedicada llega a tener problemas (cierre, verificación
 adicional, etc.), el arreglo es volver a exportar sus cookies y
 reemplazar `worker/secrets/yt-cookies.txt`, sin tocar código.
+
+**Segunda línea de defensa (independiente de la reputación de la IP):** el
+servicio `bgutil-pot` (`docker-compose.yml`, imagen
+`brainicism/bgutil-ytdlp-pot-provider`) genera "proof-of-origin tokens"
+válidos que YouTube acepta como prueba de que la petición no es de un bot,
+sin depender de que la IP tenga buena reputación. El paquete pip
+`bgutil-ytdlp-pot-provider` (en `requirements.txt`) es el lado cliente que
+yt-dlp usa para hablar con ese servicio — configurado vía
+`BGUTIL_POT_BASE_URL` (ver `worker/youtube_ingest.py`). Diagnóstico: se
+confirmó en producción (servidor Hetzner) que el bloqueo de YouTube
+("Sign in to confirm you're not a bot") ocurre incluso con cookies frescas
+y cambiando el "client" de extracción (android/ios/tv/etc.) — parece
+disparado por volumen de peticiones en poco tiempo más que por la IP en sí
+(un video que había funcionado dejó de funcionar tras varias pruebas
+seguidas), así que probablemente se recupera solo pasado un tiempo sin
+pedir muchos videos seguidos. El PO Token provider es la mitigación que no
+depende de esperar ese enfriamiento.
 
 Para correr el worker fuera de Docker (directo en el host), `YT_DLP_COOKIES_FILE`
 en `.env` ya apunta a `./secrets/yt-cookies.txt` relativo a `worker/`.

@@ -54,6 +54,13 @@ services:
       timeout: 5s
       retries: 10
 
+  # Proof-of-origin token server for yt-dlp's YouTube extractor — a second,
+  # IP-reputation-independent defense against the "Sign in to confirm
+  # you're not a bot" bot-check, alongside cookies. See worker/README.md.
+  bgutil-pot:
+    image: brainicism/bgutil-ytdlp-pot-provider
+    restart: unless-stopped
+
   # Thin FastAPI process: accepts POST /transcribe and enqueues a job, does
   # NOT load Whisper itself. This is what `web` calls over HTTP.
   worker:
@@ -81,6 +88,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      bgutil-pot:
+        condition: service_started
     environment:
       WHISPER_MODEL_SIZE: small
       WHISPER_DEVICE: auto
@@ -94,6 +103,7 @@ services:
       S3_REGION: us-east-1
       S3_FORCE_PATH_STYLE: "true"
       REDIS_URL: redis://redis:6379/0
+      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
       INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
       # Optional. YouTube often blocks server IPs with a bot-check even
       # with a JS runtime present — set this to a path (inside the
