@@ -6,7 +6,8 @@ import { getStorageDriver } from "@/lib/storage";
 import { QuestionMode, VideoSourceType, VideoStatus } from "@/lib/types";
 import { triggerTranscription } from "@/lib/worker-client";
 import { extractYouTubeVideoId } from "@/lib/youtube";
-import { parseYoutubeTranscript } from "@/lib/youtube-transcript";
+import { parseYoutubeTranscript, type ParsedTranscriptSegment } from "@/lib/youtube-transcript";
+import { transcribeYoutubeWithGemini } from "@/lib/gemini-video-transcript";
 import { backfillMissingQuestions, generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
 import { billingBlockResponse } from "@/lib/billing";
 
@@ -50,10 +51,59 @@ export async function POST(req: NextRequest) {
         questionMode
       );
     }
-    return handleYouTubeUpload(youtubeUrlInput.trim(), session.user.id, titleOverride, questionMode);
+    return handleYouTubeAutoTranscribeUpload(
+      youtubeUrlInput.trim(),
+      session.user.id,
+      titleOverride,
+      questionMode
+    );
   }
 
   return handleFileUpload(formData, session.user.id, titleOverride, questionMode);
+}
+
+/** Shared by both YouTube ingestion paths: generate+verify questions for the
+ * given segments, then persist them and flip the video to Ready — or to
+ * Failed with the underlying error message if anything in there throws. */
+async function persistSegmentsAndFinish(
+  videoId: string,
+  questionMode: QuestionMode,
+  segments: ParsedTranscriptSegment[],
+  failureMessage: string
+): Promise<void> {
+  try {
+    const fragmentsForQuestions = segments.map((s, i) => ({ orderIndex: i, text: s.text }));
+    const questions = await generateQuestions(fragmentsForQuestions, questionMode);
+    backfillMissingQuestions(fragmentsForQuestions, questions);
+    await verifyQuestionCorrespondence(fragmentsForQuestions, questions, questionMode);
+
+    await prisma.$transaction([
+      prisma.segment.createMany({
+        data: segments.map((s, i) => {
+          const generated = questions.get(i);
+          return {
+            videoId,
+            orderIndex: i,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            transcriptText: s.text,
+            question: generated?.question ?? null,
+            options: generated?.options ? JSON.stringify(generated.options) : null,
+            correctOptionIndex: generated?.correctOptionIndex ?? null,
+          };
+        }),
+      }),
+      prisma.video.update({ where: { id: videoId }, data: { status: VideoStatus.Ready } }),
+    ]);
+  } catch (err) {
+    await prisma.video.update({
+      where: { id: videoId },
+      data: {
+        status: VideoStatus.Failed,
+        errorMessage: err instanceof Error ? err.message : failureMessage,
+      },
+    });
+  }
 }
 
 async function handleYouTubeTranscriptUpload(
@@ -99,49 +149,28 @@ async function handleYouTubeTranscriptUpload(
     },
   });
 
-  try {
-    const fragmentsForQuestions = parsedSegments.map((s, i) => ({ orderIndex: i, text: s.text }));
-    const questions = await generateQuestions(fragmentsForQuestions, questionMode);
-    backfillMissingQuestions(fragmentsForQuestions, questions);
-    await verifyQuestionCorrespondence(fragmentsForQuestions, questions, questionMode);
-
-    await prisma.$transaction([
-      prisma.segment.createMany({
-        data: parsedSegments.map((s, i) => {
-          const generated = questions.get(i);
-          return {
-            videoId: video.id,
-            orderIndex: i,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            transcriptText: s.text,
-            question: generated?.question ?? null,
-            options: generated?.options ? JSON.stringify(generated.options) : null,
-            correctOptionIndex: generated?.correctOptionIndex ?? null,
-          };
-        }),
-      }),
-      prisma.video.update({ where: { id: video.id }, data: { status: VideoStatus.Ready } }),
-    ]);
-  } catch (err) {
-    await prisma.video.update({
-      where: { id: video.id },
-      data: {
-        status: VideoStatus.Failed,
-        errorMessage: err instanceof Error ? err.message : "No se pudieron generar las preguntas.",
-      },
-    });
-    return NextResponse.json(
-      { error: "El video se guardó, pero falló la generación de preguntas a partir de la transcripción." },
-      { status: 502 }
-    );
-  }
+  await persistSegmentsAndFinish(
+    video.id,
+    questionMode,
+    parsedSegments,
+    "El video se guardó, pero falló la generación de preguntas a partir de la transcripción."
+  );
 
   const ready = await prisma.video.findUnique({ where: { id: video.id } });
   return NextResponse.json({ video: ready }, { status: 201 });
 }
 
-async function handleYouTubeUpload(
+/**
+ * Automatic path: Gemini's API accepts a public YouTube URL directly as
+ * video input (Google's own infrastructure fetches it, not our server), so
+ * this transcribes the video without ever touching YouTube ourselves —
+ * unlike the old worker/yt-dlp path, which datacenter IPs get blocked from.
+ * Transcription can take a while for long videos (chunked into several
+ * sequential Gemini calls — see lib/gemini-video-transcript.ts), so this
+ * responds immediately with the video in "Transcribing" status and finishes
+ * the work in the background; the frontend already polls for status.
+ */
+async function handleYouTubeAutoTranscribeUpload(
   youtubeUrl: string,
   ownerId: string,
   titleOverride: FormDataEntryValue | null,
@@ -171,22 +200,25 @@ async function handleYouTubeUpload(
     },
   });
 
-  try {
-    await triggerTranscription(video.id, { youtubeVideoId });
-  } catch (err) {
-    await prisma.video.update({
-      where: { id: video.id },
-      data: {
-        status: VideoStatus.Failed,
-        errorMessage:
-          err instanceof Error ? err.message : "No se pudo iniciar la transcripción.",
-      },
-    });
-    return NextResponse.json(
-      { error: "No se pudo iniciar la transcripción del video de YouTube." },
-      { status: 502 }
+  transcribeYoutubeWithGemini(youtubeUrl)
+    .then((segments) =>
+      persistSegmentsAndFinish(
+        video.id,
+        questionMode,
+        segments,
+        "No se pudo transcribir este video automáticamente."
+      )
+    )
+    .catch((err) =>
+      prisma.video.update({
+        where: { id: video.id },
+        data: {
+          status: VideoStatus.Failed,
+          errorMessage:
+            err instanceof Error ? err.message : "No se pudo transcribir este video automáticamente.",
+        },
+      })
     );
-  }
 
   return NextResponse.json({ video }, { status: 201 });
 }

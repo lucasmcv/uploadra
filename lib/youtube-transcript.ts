@@ -24,7 +24,7 @@ export interface ParsedTranscriptSegment {
 const TIMESTAMP_ONLY = /^(\d{1,2}:)?\d{1,2}:\d{2}$/;
 const TIMESTAMP_PREFIX = /^((?:\d{1,2}:)?\d{1,2}:\d{2})\s+(.+)$/;
 
-function timestampToSeconds(timestamp: string): number {
+export function timestampToSeconds(timestamp: string): number {
   return timestamp
     .split(":")
     .map(Number)
@@ -34,7 +34,7 @@ function timestampToSeconds(timestamp: string): number {
 /** Last segment has no "next timestamp" to bound it — give it a generous
  * span so review-mode's `time < endTime` check still matches till the end
  * of the video, regardless of its actual duration (unknown from pasted text). */
-const LAST_SEGMENT_SPAN_SECONDS = 24 * 60 * 60;
+export const LAST_SEGMENT_SPAN_SECONDS = 24 * 60 * 60;
 
 export function parseYoutubeTranscript(raw: string): ParsedTranscriptSegment[] {
   const lines = raw

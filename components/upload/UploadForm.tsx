@@ -9,7 +9,7 @@ export function UploadForm() {
   const [file, setFile] = useState<File | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [youtubeTranscript, setYoutubeTranscript] = useState("");
-  const [youtubeMode, setYoutubeMode] = useState<"transcript" | "auto">("transcript");
+  const [showManualTranscript, setShowManualTranscript] = useState(false);
   const [title, setTitle] = useState("");
   const [questionMode, setQuestionMode] = useState<"open" | "mcq">("open");
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export function UploadForm() {
       setError("Pegá un link de YouTube primero.");
       return;
     }
-    if (source === "youtube" && youtubeMode === "transcript" && !youtubeTranscript.trim()) {
+    if (source === "youtube" && showManualTranscript && !youtubeTranscript.trim()) {
       setError("Pegá el texto de la transcripción de YouTube primero.");
       return;
     }
@@ -39,7 +39,7 @@ export function UploadForm() {
       formData.append("file", file!);
     } else {
       formData.append("youtubeUrl", youtubeUrl.trim());
-      if (youtubeMode === "transcript") {
+      if (showManualTranscript) {
         formData.append("youtubeTranscript", youtubeTranscript);
       }
     }
@@ -112,32 +112,29 @@ export function UploadForm() {
               onChange={(e) => setYoutubeUrl(e.target.value)}
               className="border rounded px-3 py-2"
             />
+            <p className="text-xs text-gray-500">
+              Se transcribe automáticamente con IA; el reproductor sigue siendo el embed oficial de
+              YouTube (no se descarga ni se re-aloja nada).
+            </p>
           </div>
 
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium mb-1">Cómo obtener el texto</legend>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="youtubeMode"
-                checked={youtubeMode === "transcript"}
-                onChange={() => setYoutubeMode("transcript")}
-              />
-              Pegar la transcripción de YouTube (recomendado)
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="youtubeMode"
-                checked={youtubeMode === "auto"}
-                onChange={() => setYoutubeMode("auto")}
-              />
-              Transcribir automáticamente (puede fallar por bloqueo de YouTube)
-            </label>
-          </fieldset>
-
-          {youtubeMode === "transcript" ? (
+          {!showManualTranscript ? (
+            <button
+              type="button"
+              onClick={() => setShowManualTranscript(true)}
+              className="text-xs text-gray-500 underline self-start"
+            >
+              ¿Falló la transcripción automática? Pegarla manualmente
+            </button>
+          ) : (
             <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => setShowManualTranscript(false)}
+                className="text-xs text-gray-500 underline self-start"
+              >
+                Volver a la transcripción automática
+              </button>
               <div className="text-xs text-gray-600 bg-gray-50 border rounded p-3 flex flex-col gap-1">
                 <p className="font-medium text-gray-700">Cómo conseguir el texto (1 minuto):</p>
                 <ol className="list-decimal list-inside flex flex-col gap-0.5">
@@ -164,18 +161,7 @@ export function UploadForm() {
                 placeholder={"0:00\ntexto del primer segmento\n0:15\ntexto del segmento siguiente..."}
                 className="border rounded px-3 py-2 font-mono text-xs"
               />
-              <p className="text-xs text-gray-500">
-                El video se reproduce embebido desde YouTube; nunca se descarga ni se re-aloja nada,
-                así que este camino no depende de que YouTube bloquee descargas automáticas.
-              </p>
             </div>
-          ) : (
-            <p className="text-xs text-gray-500">
-              El video se reproduce embebido desde YouTube (no se descarga ni se re-aloja); solo el
-              audio se procesa de forma transitoria para transcribirlo. YouTube a veces bloquea esta
-              descarga automática ("Sign in to confirm you're not a bot"); si eso pasa, usá la opción
-              de pegar la transcripción de arriba.
-            </p>
           )}
         </div>
       )}
