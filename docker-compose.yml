@@ -146,8 +146,17 @@ services:
       # (the worker container calls this directly, it never goes through
       # the host's port mapping).
       NEXT_PUBLIC_APP_URL: http://web:3000
+      # The browser-facing address — used for Stripe Checkout/Portal
+      # redirects, which NEXT_PUBLIC_APP_URL (above) can't be, since it's
+      # only resolvable inside the Docker network.
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
       INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRODUCT_ID: ${STRIPE_PRODUCT_ID:-}
+      BILLING_RECONCILE_SECRET: ${BILLING_RECONCILE_SECRET:-dev-only-shared-secret-change-me}
     ports:
       - "3000:3000"
 

@@ -6,6 +6,7 @@ import { DocumentStatus, QuestionMode } from "@/lib/types";
 import { fragmentLines, type TextFragment } from "@/lib/text-fragmentation";
 import { extractPages, type DocumentSourceFormat } from "@/lib/document-extraction";
 import { backfillMissingQuestions, generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
+import { billingBlockResponse } from "@/lib/billing";
 
 export async function GET() {
   const session = await auth();
@@ -39,6 +40,8 @@ export async function POST(req: NextRequest) {
   if (!session?.user) {
     return NextResponse.json({ error: "No autenticado." }, { status: 401 });
   }
+  const billingBlock = await billingBlockResponse(session.user.id);
+  if (billingBlock) return billingBlock;
 
   const formData = await req.formData();
   const file = formData.get("file");

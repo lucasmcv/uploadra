@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { billingBlockResponse } from "@/lib/billing";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "No autenticado." }, { status: 401 });
   }
+  const billingBlock = await billingBlockResponse(session.user.id);
+  if (billingBlock) return billingBlock;
 
   const { id: fragmentId } = await params;
   const fragment = await prisma.fragment.findUnique({
