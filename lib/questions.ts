@@ -106,9 +106,14 @@ export function stripEmbeddedAnswerParens(questions: Map<number, GeneratedQuesti
 
 /**
  * Hard requirement: every fragment must end up with a question (100%
- * coverage). Fills in a generic fallback for any fragment the LLM call
- * missed or that failed generation entirely, so the caller never has to
- * treat "no question" as an acceptable outcome.
+ * coverage). Fills in a fallback for any fragment the LLM call missed or
+ * that failed generation entirely (e.g. Gemini's daily free-tier quota ran
+ * out mid-video — in that case the prompt never even ran, so no amount of
+ * prompt tuning changes this outcome), so the caller never has to treat
+ * "no question" as an acceptable outcome. The fallback is honest about
+ * being one — rather than faking a crafted question, it shows the actual
+ * fragment text so it's still useful at a glance instead of a repeated,
+ * content-free phrase.
  */
 export function backfillMissingQuestions(
   fragments: FragmentForQuestion[],
@@ -116,8 +121,10 @@ export function backfillMissingQuestions(
 ): void {
   for (const fragment of fragments) {
     if (!questions.has(fragment.orderIndex)) {
+      const snippet =
+        fragment.text.length > 80 ? `${fragment.text.slice(0, 80).trim()}…` : fragment.text;
       questions.set(fragment.orderIndex, {
-        question: "¿Qué se dice en este fragmento?",
+        question: `(No se pudo generar una pregunta para este fragmento) "${snippet}"`,
         options: null,
         correctOptionIndex: null,
       });
