@@ -2,6 +2,8 @@
 
 import { useRef } from "react";
 import Link from "next/link";
+import { isQuotaExhaustedText } from "@/lib/gemini-quota-marker";
+import { GeminiKeyInstructions } from "@/components/settings/GeminiKeyInstructions";
 
 interface SegmentData {
   id: string;
@@ -82,10 +84,23 @@ export function VideoQAView({ video }: { video: VideoData }) {
         <video ref={videoRef} controls src={`/api/videos/${video.id}/stream`} className="w-full rounded" />
       )}
 
+      {video.segments.some((s) => s.question && isQuotaExhaustedText(s.question)) && (
+        <div className="flex flex-col gap-2 border border-amber-300 bg-amber-50 rounded p-4">
+          <p className="text-sm text-amber-800">
+            Se agotaron los créditos gratuitos de Gemini mientras se generaban algunas preguntas de
+            este video — quedaron marcadas más abajo. Se restauran solas mañana, o podés usar tu
+            propia clave para no depender del límite compartido:
+          </p>
+          <GeminiKeyInstructions />
+        </div>
+      )}
+
       <ol className="flex flex-col gap-3">
-        {video.segments.map((segment) => (
+        {video.segments
+          .filter((segment) => segment.question)
+          .map((segment) => (
           <li key={segment.id} className="border rounded p-3 flex flex-col gap-1">
-            <p className="text-sm font-medium">{segment.question ?? "¿Qué se dice en este fragmento?"}</p>
+            <p className="text-sm font-medium">{segment.question}</p>
             <p className="text-sm text-gray-600">
               {formatTimestamp(segment.startTime)} -{" "}
               {isYoutube ? (

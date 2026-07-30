@@ -7,8 +7,10 @@ import { QuestionMode, VideoStatus } from "@/lib/types";
 import { extractYouTubeVideoId } from "@/lib/youtube";
 import { parseYoutubeTranscript, type ParsedTranscriptSegment } from "@/lib/youtube-transcript";
 import { normalizeTranscriptWithGemini } from "@/lib/gemini-video-transcript";
-import { backfillMissingQuestions, generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
+import { generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
 import { billingBlockResponse } from "@/lib/billing";
+import { getGeminiApiKeyForUser } from "@/lib/gemini-key";
+import { isDailyQuotaExhausted, quotaExhaustedMessage } from "@/lib/gemini-retry";
 
 export async function GET() {
   const session = await auth();
@@ -50,11 +52,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Pegá la transcripción con tiempos." }, { status: 400 });
   }
 
+  const apiKey = await getGeminiApiKeyForUser(session.user.id);
+
   let parsedSegments = parseYoutubeTranscript(transcriptInput);
   if (parsedSegments.length === 0) {
     try {
-      parsedSegments = await normalizeTranscriptWithGemini(transcriptInput);
+      parsedSegments = await normalizeTranscriptWithGemini(transcriptInput, apiKey);
     } catch (err) {
+      if (isDailyQuotaExhausted(err)) {
+        return NextResponse.json(
+          { error: quotaExhaustedMessage(), code: "GEMINI_QUOTA_EXHAUSTED" },
+          { status: 429 }
+        );
+      }
       return NextResponse.json(
         {
           error:
@@ -69,11 +79,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (typeof youtubeUrlInput === "string" && youtubeUrlInput.trim()) {
-    return handleYoutubeCreate(youtubeUrlInput.trim(), parsedSegments, session.user.id, titleOverride);
+    return handleYoutubeCreate(youtubeUrlInput.trim(), parsedSegments, session.user.id, titleOverride, apiKey);
   }
 
   if (fileInput instanceof File) {
-    return handleUploadCreate(fileInput, parsedSegments, session.user.id, titleOverride);
+    return handleUploadCreate(fileInput, parsedSegments, session.user.id, titleOverride, apiKey);
   }
 
   return NextResponse.json(
@@ -83,12 +93,17 @@ export async function POST(req: NextRequest) {
 }
 
 /** Shared by both sources: generate a question per segment, then persist
- * video + segments in one shot (already "ready" — nothing async left). */
-async function buildSegmentsWithQuestions(segments: ParsedTranscriptSegment[]) {
+ * video + segments in one shot (already "ready" — nothing async left).
+ * A segment can legitimately end up with no question at all — e.g. a
+ * personal anecdote with no factual content — see allowSkipping on
+ * generateQuestions. Segments without a question just don't show up as
+ * a Q&A item (see components/videos/VideoQAView.tsx). */
+async function buildSegmentsWithQuestions(segments: ParsedTranscriptSegment[], apiKey: string | null) {
   const fragmentsForQuestions = segments.map((s, i) => ({ orderIndex: i, text: s.text }));
-  const questions = await generateQuestions(fragmentsForQuestions, QuestionMode.Open);
-  backfillMissingQuestions(fragmentsForQuestions, questions);
-  await verifyQuestionCorrespondence(fragmentsForQuestions, questions, QuestionMode.Open);
+  const questions = await generateQuestions(fragmentsForQuestions, QuestionMode.Open, apiKey, {
+    allowSkipping: true,
+  });
+  await verifyQuestionCorrespondence(fragmentsForQuestions, questions, QuestionMode.Open, apiKey);
 
   return segments.map((s, i) => ({
     orderIndex: i,
@@ -103,7 +118,8 @@ async function handleYoutubeCreate(
   youtubeUrl: string,
   segments: ParsedTranscriptSegment[],
   ownerId: string,
-  titleOverride: FormDataEntryValue | null
+  titleOverride: FormDataEntryValue | null,
+  apiKey: string | null
 ) {
   const youtubeVideoId = extractYouTubeVideoId(youtubeUrl);
   if (!youtubeVideoId) {
@@ -113,7 +129,7 @@ async function handleYoutubeCreate(
     );
   }
 
-  const segmentsData = await buildSegmentsWithQuestions(segments);
+  const segmentsData = await buildSegmentsWithQuestions(segments, apiKey);
 
   const video = await prisma.video.create({
     data: {
@@ -137,7 +153,8 @@ async function handleUploadCreate(
   file: File,
   segments: ParsedTranscriptSegment[],
   ownerId: string,
-  titleOverride: FormDataEntryValue | null
+  titleOverride: FormDataEntryValue | null,
+  apiKey: string | null
 ) {
   if (!file.type.startsWith("video/") && !file.type.startsWith("audio/")) {
     return NextResponse.json({ error: "El archivo debe ser un video o audio." }, { status: 400 });
@@ -158,7 +175,7 @@ async function handleUploadCreate(
     );
   }
 
-  const segmentsData = await buildSegmentsWithQuestions(segments);
+  const segmentsData = await buildSegmentsWithQuestions(segments, apiKey);
 
   const video = await prisma.video.create({
     data: {

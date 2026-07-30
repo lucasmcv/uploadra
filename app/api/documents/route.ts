@@ -7,6 +7,7 @@ import { fragmentLines, type TextFragment } from "@/lib/text-fragmentation";
 import { extractPages, type DocumentSourceFormat } from "@/lib/document-extraction";
 import { backfillMissingQuestions, generateQuestions, verifyQuestionCorrespondence } from "@/lib/questions";
 import { billingBlockResponse } from "@/lib/billing";
+import { getGeminiApiKeyForUser } from "@/lib/gemini-key";
 
 export async function GET() {
   const session = await auth();
@@ -108,10 +109,11 @@ export async function POST(req: NextRequest) {
   });
 
   try {
+    const apiKey = await getGeminiApiKeyForUser(session.user.id);
     const fragmentsForQuestions = fragments.map((f) => ({ orderIndex: f.orderIndex, text: f.text }));
-    const questions = await generateQuestions(fragmentsForQuestions, questionMode);
+    const questions = await generateQuestions(fragmentsForQuestions, questionMode, apiKey);
     backfillMissingQuestions(fragmentsForQuestions, questions);
-    await verifyQuestionCorrespondence(fragmentsForQuestions, questions, questionMode);
+    await verifyQuestionCorrespondence(fragmentsForQuestions, questions, questionMode, apiKey);
 
     await prisma.$transaction([
       prisma.fragment.createMany({

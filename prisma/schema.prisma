@@ -38,6 +38,12 @@ model User {
   // "we crossed the threshold" timestamp.
   paymentGraceUntil    DateTime?
 
+  // Optional per-user Gemini API key (AES-256-GCM encrypted, see
+  // lib/crypto.ts) — when set, this user's AI calls (question generation,
+  // transcript normalization) run against their own key/quota instead of
+  // the platform's shared one. Falls back to the platform key when unset.
+  geminiApiKeyEncrypted String?
+
   videos     Video[]
   documents  Document[]
   docAnswers DocAnswer[]

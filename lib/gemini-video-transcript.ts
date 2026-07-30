@@ -6,7 +6,7 @@
 // invented or adjusted, since they're the one piece of ground truth we
 // can't verify any other way.
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import {
   LAST_SEGMENT_SPAN_SECONDS,
   timestampToSeconds,
@@ -15,6 +15,21 @@ import {
 import { generateContentWithRetry } from "@/lib/gemini-retry";
 
 const MODEL = "gemini-flash-latest";
+
+// Forces Gemini to return well-formed JSON matching this shape exactly,
+// instead of relying purely on the "return ONLY a JSON array" prompt
+// instruction (which free-text generation can partially ignore).
+const TRANSCRIPT_SEGMENTS_SCHEMA: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      start: { type: Type.STRING },
+      text: { type: Type.STRING },
+    },
+    required: ["start", "text"],
+  },
+};
 
 function parseTranscriptJson(responseText: string): { start: string; text: string }[] {
   const match = /\[[\s\S]*\]/.exec(responseText);
@@ -33,11 +48,11 @@ function parseTranscriptJson(responseText: string): { start: string; text: strin
 }
 
 export async function normalizeTranscriptWithGemini(
-  rawTranscriptText: string
+  rawTranscriptText: string,
+  apiKey: string | null
 ): Promise<ParsedTranscriptSegment[]> {
-  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY no está configurada.");
+    throw new Error("No hay ninguna clave de Gemini configurada (ni propia del usuario ni de la plataforma).");
   }
   const client = new GoogleGenAI({ apiKey });
 
@@ -60,6 +75,10 @@ ${rawTranscriptText}`;
   const response = await generateContentWithRetry(client, {
     model: MODEL,
     contents: [{ text: prompt }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: TRANSCRIPT_SEGMENTS_SCHEMA,
+    },
   });
 
   const parsedSegments = parseTranscriptJson(response.text ?? "");
