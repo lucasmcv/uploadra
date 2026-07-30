@@ -54,10 +54,15 @@ services:
       minio:
         condition: service_healthy
     environment:
-      # Local dev default matches the `postgres` service above; production
-      # overrides this in its own .env with the real deployed credentials
-      # (never hardcode those here — see docs/DEPLOYMENT.md).
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      # Deliberately a separate var from DATABASE_URL: that one (in .env)
+      # is for host-side `npm run dev`, where Postgres is reached via
+      # localhost's mapped port — inside this container "localhost" means
+      # the container itself, so it needs the `postgres` service name
+      # instead. Local dev default matches the `postgres` service above;
+      # production sets DOCKER_DATABASE_URL in its own .env with the real
+      # deployed credentials (never hardcode those here — see
+      # docs/DEPLOYMENT.md).
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://app:app@postgres:5432/app}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       # Auth.js refuses requests against an "untrusted" host in production
       # unless told otherwise — we're not on Vercel (which sets this
