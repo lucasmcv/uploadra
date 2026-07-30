@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { GeminiKeyInstructions } from "@/components/settings/GeminiKeyInstructions";
 
 export function GeminiKeyForm() {
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -75,26 +76,7 @@ export function GeminiKeyForm() {
         </div>
       ) : (
         <form onSubmit={handleSave} className="flex flex-col gap-3">
-          <div className="text-sm text-gray-700 bg-gray-50 border rounded p-4 flex flex-col gap-2">
-            <p className="font-semibold text-gray-800">Cómo conseguir tu clave (4 pasos):</p>
-            <ol className="list-decimal list-inside flex flex-col gap-1.5 ml-1">
-              <li>
-                Hacé clic acá para abrir tu página de clave:{" "}
-                <button
-                  type="button"
-                  onClick={() => window.open("https://aistudio.google.com/apikey", "_blank")}
-                  className="text-blue-600 underline font-medium"
-                >
-                  Obtener clave de Gemini
-                </button>
-              </li>
-              <li>Si te pide iniciar sesión, entrá con tu cuenta de Google (la misma de Gmail).</li>
-              <li>
-                Hacé clic en el botón azul <strong>&quot;Create API key&quot;</strong>.
-              </li>
-              <li>Copiá el código que aparece y pegalo en el cuadro de abajo.</li>
-            </ol>
-          </div>
+          <GeminiKeyInstructions />
 
           <div className="flex flex-col gap-1">
             <label htmlFor="apiKey" className="text-sm font-medium">

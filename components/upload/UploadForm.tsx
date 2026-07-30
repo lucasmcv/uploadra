@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { GeminiKeyInstructions } from "@/components/settings/GeminiKeyInstructions";
 
 export function UploadForm() {
   const router = useRouter();
@@ -11,6 +12,7 @@ export function UploadForm() {
   const [transcript, setTranscript] = useState("");
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [quotaExhausted, setQuotaExhausted] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -30,6 +32,7 @@ export function UploadForm() {
     }
 
     setError(null);
+    setQuotaExhausted(false);
     setUploading(true);
 
     const formData = new FormData();
@@ -48,6 +51,7 @@ export function UploadForm() {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setError(body.error ?? "No se pudo crear el video.");
+      setQuotaExhausted(body.code === "GEMINI_QUOTA_EXHAUSTED");
       return;
     }
 
@@ -172,6 +176,7 @@ export function UploadForm() {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {quotaExhausted && <GeminiKeyInstructions />}
       <button
         type="submit"
         disabled={uploading}

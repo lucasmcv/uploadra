@@ -60,7 +60,10 @@ export async function POST(req: NextRequest) {
       parsedSegments = await normalizeTranscriptWithGemini(transcriptInput, apiKey);
     } catch (err) {
       if (isDailyQuotaExhausted(err)) {
-        return NextResponse.json({ error: quotaExhaustedMessage() }, { status: 429 });
+        return NextResponse.json(
+          { error: quotaExhaustedMessage(), code: "GEMINI_QUOTA_EXHAUSTED" },
+          { status: 429 }
+        );
       }
       return NextResponse.json(
         {

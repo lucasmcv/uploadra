@@ -9,6 +9,7 @@
 // demand") is retried the same way, just without a server-provided delay.
 
 import { GoogleGenAI } from "@google/genai";
+import { QUOTA_EXHAUSTED_MARKER } from "@/lib/gemini-quota-marker";
 
 const MAX_RETRY_ATTEMPTS = 5;
 const DEFAULT_RETRY_DELAY_SECONDS = 30;
@@ -73,7 +74,7 @@ export function quotaExhaustedMessage(now: Date = new Date()): string {
     day: "2-digit",
     month: "2-digit",
   }).format(resetsAt);
-  return `Se agotaron los créditos gratuitos de Gemini por hoy — se restauran automáticamente el ${day} a las ${time} hora Argentina. Si no querés esperar, podés usar tu propia clave de Gemini en Configuración (sin límite compartido) o consultarnos por un plan pago con más créditos.`;
+  return `${QUOTA_EXHAUSTED_MARKER} — se restauran automáticamente el ${day} a las ${time} hora Argentina. Si no querés esperar, podés usar tu propia clave de Gemini en Configuración (sin límite compartido) o consultarnos por un plan pago con más créditos.`;
 }
 
 function parseRetryDelaySeconds(err: unknown): number {
