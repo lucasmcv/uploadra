@@ -162,6 +162,9 @@ services:
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
       INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+      # Encrypts per-user Gemini API keys (BYOK, see lib/crypto.ts) at
+      # rest — any string works, it's hashed to a 32-byte AES key.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}

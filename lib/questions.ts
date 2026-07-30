@@ -1,6 +1,38 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import type { QuestionMode } from "@/lib/types";
-import { generateContentWithRetry } from "@/lib/gemini-retry";
+import { generateContentWithRetry, isDailyQuotaExhausted, quotaExhaustedMessage } from "@/lib/gemini-retry";
+
+// Structured output (responseSchema) forces Gemini to return JSON matching
+// this shape exactly — no missing fields, no wrapping the array in
+// explanatory prose, no risk of the free-text "return ONLY a JSON array"
+// instruction being partially ignored. This only guarantees the response's
+// FORM, not the content-quality rules below (self-containedness etc.),
+// which still rely on the prompt text and the verify checkpoint.
+const OPEN_QUESTIONS_SCHEMA: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      order_index: { type: Type.INTEGER },
+      question: { type: Type.STRING },
+    },
+    required: ["order_index", "question"],
+  },
+};
+
+const MCQ_QUESTIONS_SCHEMA: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      order_index: { type: Type.INTEGER },
+      question: { type: Type.STRING },
+      options: { type: Type.ARRAY, items: { type: Type.STRING }, minItems: "4", maxItems: "4" },
+      correct_index: { type: Type.INTEGER, minimum: 0, maximum: 3 },
+    },
+    required: ["order_index", "question", "options", "correct_index"],
+  },
+};
 
 export interface FragmentForQuestion {
   orderIndex: number;
@@ -26,7 +58,11 @@ function batch<T>(items: T[], size: number): T[][] {
   return batches;
 }
 
-const SELF_CONTAINED_RULE = `- La pregunta debe ser AUTOCONTENIDA y específica: alguien que conoce el tema debe poder intentar responderla sin haber visto ni escuchado el fragmento — el video/audio está ahí solo para verificar o ampliar la respuesta, no para poder entender de qué se pregunta. Mencioná en la pregunta el tema o contexto concreto en juego (nunca preguntas vagas o genéricas como "¿qué se dice en este fragmento?" o "¿qué se menciona acá?"). Al mismo tiempo, el fragmento debe seguir siendo la respuesta DIRECTA y completa a esa pregunta — no alcanza con que estén relacionados temáticamente. Ejemplo: si el fragmento dice "el diagnóstico de diabetes se hace con una glucemia en ayunas mayor a 126 mg/dl en dos ocasiones", la pregunta correcta es "¿Con qué valor de glucemia en ayunas se diagnostica diabetes?" (específica, autocontenida, Y el fragmento la responde directamente) — NO "¿Cómo se hace el diagnóstico de diabetes?" (demasiado amplia: ese fragmento podría no ser la respuesta completa si hay otros criterios en otros fragmentos).`;
+const SELF_CONTAINED_RULE = `- La pregunta debe ser AUTOCONTENIDA y específica: alguien que conoce el tema debe poder intentar responderla sin haber visto ni escuchado el fragmento — el video/audio está ahí solo para verificar o ampliar la respuesta, no para poder entender de qué se pregunta. Mencioná en la pregunta el tema o contexto concreto en juego (nunca preguntas vagas o genéricas como "¿qué se dice en este fragmento?" o "¿qué se menciona acá?"). Al mismo tiempo, el fragmento debe seguir siendo la respuesta DIRECTA y completa a esa pregunta — no alcanza con que estén relacionados temáticamente. Ejemplo: si el fragmento dice "el diagnóstico de diabetes se hace con una glucemia en ayunas mayor a 126 mg/dl en dos ocasiones", la pregunta correcta es "¿Con qué valor de glucemia en ayunas se diagnostica diabetes?" (específica, autocontenida, Y el fragmento la responde directamente) — NO "¿Cómo se hace el diagnóstico de diabetes?" (demasiado amplia: ese fragmento podría no ser la respuesta completa si hay otros criterios en otros fragmentos).
+
+REGLA ABSOLUTA, sin excepciones: la pregunta NUNCA puede depender de contexto implícito de otros fragmentos que el lector no tiene — nunca uses referencias como "el paciente", "este caso", "dicho estudio", "el cuadro mencionado" sin resolver de qué se trata dentro de la MISMA pregunta. Si el fragmento es la continuación de un caso clínico o ejemplo narrado en fragmentos anteriores (por ejemplo "Al no encontrar en la tomografía causas que lo justifiquen, ¿qué decisión se tomó?" — esto es inválido porque asume que el lector ya sabe de qué paciente/cuadro se habla), tenés que REFORMULAR la pregunta en términos generales/conceptuales que cualquiera pueda entender sin haber visto el resto del video. Ejemplo de reformulación correcta: en vez de "¿qué decisión se tomó?" (depende de contexto previo), preguntá "¿Qué conducta se debe tomar cuando la tomografía no muestra causas alternativas en un paciente con sospecha de encefalitis y fiebre?" (autocontenida: incluye el contexto clínico necesario dentro de la pregunta misma).`;
+
+const SKIP_RULE = `- EXCEPCIÓN, criterio MUY estricto: si un fragmento genuinamente no tiene NINGÚN contenido conceptual o factual que se pueda convertir en una pregunta autocontenida (por ejemplo: una anécdota personal sin ninguna enseñanza o dato concreto, un chiste, un saludo, una transición tipo "bueno, sigamos" sin información nueva), NO generes pregunta para ese fragmento — omitilo del array de resultados (no incluyas su order_index). Usá esta excepción SOLO cuando estés absolutamente seguro de que NINGUNA pregunta autocontenida sería posible, ni siquiera reformulando en términos generales. Ante la duda, preferí generar la pregunta en vez de omitir — omitir debería ser la excepción rara, no la norma.`;
 
 const OPEN_PROMPT_HEADER = `Para cada fragmento numerado abajo, generá una pregunta de comprensión cuya respuesta directa y completa sea exactamente (o muy cercana a) el texto de ese fragmento — no una pregunta más amplia que ese fragmento solo responda parcialmente. El fragmento funciona como la "respuesta" que la persona va a ver/escuchar justo después de leer la pregunta.
 
@@ -37,8 +73,6 @@ ${SELF_CONTAINED_RULE}
 - Si el fragmento es una oración declarativa, formulá una pregunta natural que lleve a esa respuesta.
 - La pregunta NUNCA debe incluir la respuesta, ni siquiera parcialmente, ni entre paréntesis.
 - Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string}, sin texto adicional, sin markdown.
-
-Fragmentos:
 `;
 
 const MCQ_PROMPT_HEADER = `Para cada fragmento numerado abajo, generá una pregunta de opción múltiple con 4 opciones (una correcta, tres distractores plausibles) cuya opción correcta sea exactamente (o muy cercana a) el texto de ese fragmento — no una pregunta más amplia que ese fragmento solo responda parcialmente. El fragmento funciona como la "respuesta" que la persona va a ver/escuchar justo después de leer la pregunta y elegir una opción.
@@ -50,28 +84,50 @@ Reglas:
 ${SELF_CONTAINED_RULE}
 - La pregunta NUNCA debe incluir la respuesta, ni siquiera parcialmente, ni entre paréntesis.
 - Devolvé SOLO un JSON array de objetos {"order_index": number, "question": string, "options": [string, string, string, string], "correct_index": number}, sin texto adicional, sin markdown. correct_index es 0-based.
-
-Fragmentos:
 `;
+
+export interface GenerateQuestionsOptions {
+  /**
+   * When true (video/audio segments), Gemini is allowed to omit a
+   * fragment entirely when it has no answerable content (small talk,
+   * personal anecdotes, transitions) — omitted fragments simply end up
+   * with no question, rather than a forced fallback. A batch that fails
+   * outright (network/quota error) is a different case: those fragments
+   * DO get backfilled with an honest "generation failed" fallback,
+   * because that's a system failure, not a content judgment.
+   * When false (default, text documents — unchanged behavior), every
+   * fragment always gets a question; the caller is expected to call
+   * backfillMissingQuestions itself afterward, as it always has.
+   */
+  allowSkipping?: boolean;
+}
 
 export async function generateQuestions(
   fragments: FragmentForQuestion[],
-  mode: QuestionMode
+  mode: QuestionMode,
+  apiKey: string | null,
+  options: GenerateQuestionsOptions = {}
 ): Promise<Map<number, GeneratedQuestion>> {
-  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || fragments.length === 0) return new Map();
 
   const client = new GoogleGenAI({ apiKey });
   const result = new Map<number, GeneratedQuestion>();
+  const promptHeader =
+    (mode === "mcq" ? MCQ_PROMPT_HEADER : OPEN_PROMPT_HEADER) + (options.allowSkipping ? `${SKIP_RULE}\n` : "") +
+    "\nFragmentos:\n";
 
   for (const chunk of batch(fragments, BATCH_SIZE)) {
     const numbered = chunk.map((s) => `${s.orderIndex}: ${s.text}`).join("\n");
-    const prompt = (mode === "mcq" ? MCQ_PROMPT_HEADER : OPEN_PROMPT_HEADER) + numbered;
+    const prompt = promptHeader + numbered;
 
     try {
       const response = await generateContentWithRetry(client, {
         model: "gemini-flash-latest",
         contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: mode === "mcq" ? MCQ_QUESTIONS_SCHEMA : OPEN_QUESTIONS_SCHEMA,
+        },
       });
 
       const questions =
@@ -79,8 +135,14 @@ export async function generateQuestions(
       for (const [orderIndex, q] of questions) result.set(orderIndex, q);
     } catch (err) {
       console.error("[questions] Falló la generación de preguntas para un lote:", err);
-      // Continue with the remaining batches — backfillMissingQuestions
-      // covers whatever this one couldn't produce.
+      // A real system failure (not a content decision) — only backfill
+      // here, for this chunk, when the caller opted into skipping;
+      // otherwise the caller's own backfillMissingQuestions pass (over
+      // the FULL fragment list) covers it, unchanged from before.
+      if (options.allowSkipping) {
+        const reason = isDailyQuotaExhausted(err) ? quotaExhaustedMessage() : undefined;
+        backfillMissingQuestions(chunk, result, reason);
+      }
     }
   }
 
@@ -117,14 +179,16 @@ export function stripEmbeddedAnswerParens(questions: Map<number, GeneratedQuesti
  */
 export function backfillMissingQuestions(
   fragments: FragmentForQuestion[],
-  questions: Map<number, GeneratedQuestion>
+  questions: Map<number, GeneratedQuestion>,
+  reasonMessage?: string
 ): void {
+  const prefix = reasonMessage ? `(${reasonMessage})` : "(No se pudo generar una pregunta para este fragmento)";
   for (const fragment of fragments) {
     if (!questions.has(fragment.orderIndex)) {
       const snippet =
         fragment.text.length > 80 ? `${fragment.text.slice(0, 80).trim()}…` : fragment.text;
       questions.set(fragment.orderIndex, {
-        question: `(No se pudo generar una pregunta para este fragmento) "${snippet}"`,
+        question: `${prefix} "${snippet}"`,
         options: null,
         correctOptionIndex: null,
       });
@@ -135,7 +199,7 @@ export function backfillMissingQuestions(
 const VERIFY_OPEN_PROMPT_HEADER = `Actuá como un revisor de control de calidad. Para cada par de fragmento y pregunta ya generados abajo, verificá que la pregunta corresponda de forma adecuada y exclusiva a ESE fragmento — su respuesta directa debe ser el contenido de ese fragmento específico, no el de otro fragmento ni algo genérico que podría aplicar a cualquiera.
 
 - Si la pregunta ya corresponde bien Y es autocontenida/específica, devolvé el mismo texto tal cual.
-- Si no corresponde bien (es ambigua, encajaría mejor con otro fragmento, no tiene relación clara con el fragmento, o es demasiado amplia y el fragmento solo la responde parcialmente), O si es vaga/genérica (del estilo "¿qué se dice en este fragmento?", "¿qué se menciona acá?", que no se puede intentar responder sin haber visto el fragmento), reemplazala por una pregunta nueva y específica que sí corresponda.
+- Si no corresponde bien (es ambigua, encajaría mejor con otro fragmento, no tiene relación clara con el fragmento, o es demasiado amplia y el fragmento solo la responde parcialmente), O si es vaga/genérica (del estilo "¿qué se dice en este fragmento?", "¿qué se menciona acá?", que no se puede intentar responder sin haber visto el fragmento), O si depende de contexto implícito de otros fragmentos (usa "el paciente", "este caso", "dicho estudio" u otra referencia sin resolver de qué se trata), reemplazala por una pregunta nueva, específica y autocontenida que sí corresponda.
 ${SELF_CONTAINED_RULE}
 - La pregunta nunca debe incluir la respuesta ni siquiera entre paréntesis.
 
@@ -147,7 +211,7 @@ Fragmentos y preguntas a revisar:
 const VERIFY_MCQ_PROMPT_HEADER = `Actuá como un revisor de control de calidad. Para cada fragmento con su pregunta de opción múltiple ya generada abajo, verificá que la opción marcada como correcta corresponda de forma adecuada y exclusiva al contenido de ESE fragmento específico, y que las 4 opciones sigan siendo plausibles entre sí.
 
 - Si ya está bien Y la pregunta es autocontenida/específica, devolvé la misma pregunta y opciones tal cual.
-- Si no corresponde bien (la opción "correcta" no coincide con el fragmento, es ambigua, encajaría mejor con otro fragmento, o es demasiado amplia y el fragmento solo la responde parcialmente), O si la pregunta es vaga/genérica, generá una versión corregida: 4 opciones plausibles (mismo estilo/longitud aproximada), una sola correcta que coincida con ese fragmento específico.
+- Si no corresponde bien (la opción "correcta" no coincide con el fragmento, es ambigua, encajaría mejor con otro fragmento, o es demasiado amplia y el fragmento solo la responde parcialmente), O si la pregunta es vaga/genérica, O si depende de contexto implícito de otros fragmentos (usa "el paciente", "este caso", "dicho estudio" u otra referencia sin resolver de qué se trata), generá una versión corregida: 4 opciones plausibles (mismo estilo/longitud aproximada), una sola correcta que coincida con ese fragmento específico.
 ${SELF_CONTAINED_RULE}
 - La pregunta nunca debe incluir la respuesta, ni siquiera entre paréntesis.
 
@@ -171,9 +235,9 @@ Fragmentos y preguntas a revisar:
 export async function verifyQuestionCorrespondence(
   fragments: FragmentForQuestion[],
   questions: Map<number, GeneratedQuestion>,
-  mode: QuestionMode
+  mode: QuestionMode,
+  apiKey: string | null
 ): Promise<void> {
-  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || fragments.length === 0) return;
 
   const client = new GoogleGenAI({ apiKey });
@@ -198,6 +262,10 @@ export async function verifyQuestionCorrespondence(
       const response = await generateContentWithRetry(client, {
         model: "gemini-flash-latest",
         contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: mode === "mcq" ? MCQ_QUESTIONS_SCHEMA : OPEN_QUESTIONS_SCHEMA,
+        },
       });
 
       const reviewed =

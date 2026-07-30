@@ -24,6 +24,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/billing" className="text-sm underline">
             Facturación
           </Link>
+          <Link href="/settings" className="text-sm underline">
+            Configuración
+          </Link>
         </nav>
         <div className="flex items-center gap-3 text-sm text-gray-600">
           {session?.user?.email && <span>{session.user.email}</span>}

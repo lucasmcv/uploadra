@@ -28,9 +28,52 @@ function isRetryableError(err: unknown): boolean {
 // lifetime brings it back (it only resets on Google's clock, hours away),
 // so retrying is pure wasted time. Anything else 429 (a short per-minute
 // burst) or 503 (transient "model busy") is worth waiting out.
-function isDailyQuotaExhausted(err: unknown): boolean {
+export function isDailyQuotaExhausted(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return message.includes("PerDay");
+}
+
+// Gemini's daily request quota (RPD) resets at midnight Pacific time,
+// regardless of caller location — computed via the current PT UTC offset
+// (correctly handles the PST/PDT switch without hardcoding a fixed
+// offset) rather than a hardcoded local-time string.
+function nextMidnightPacific(now: Date): Date {
+  const dateFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const [y, m, d] = dateFormatter.format(now).split("-").map(Number);
+
+  const offsetFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    timeZoneName: "shortOffset",
+  });
+  const offsetPart = offsetFormatter.formatToParts(now).find((p) => p.type === "timeZoneName")?.value ?? "GMT-8";
+  const offsetHours = parseInt(/GMT([+-]\d+)/.exec(offsetPart)?.[1] ?? "-8", 10);
+
+  return new Date(Date.UTC(y, m - 1, d + 1, -offsetHours, 0, 0));
+}
+
+/** Human-readable, Argentina-time explanation of when the free-tier daily
+ * quota resets, plus how to avoid hitting it again — surfaced anywhere a
+ * fragment/segment ends up without a real generated question because of
+ * this specific failure (see backfillMissingQuestions). */
+export function quotaExhaustedMessage(now: Date = new Date()): string {
+  const resetsAt = nextMidnightPacific(now);
+  const time = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(resetsAt);
+  const day = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    day: "2-digit",
+    month: "2-digit",
+  }).format(resetsAt);
+  return `Se agotaron los créditos gratuitos de Gemini por hoy — se restauran automáticamente el ${day} a las ${time} hora Argentina. Si no querés esperar, podés usar tu propia clave de Gemini en Configuración (sin límite compartido) o consultarnos por un plan pago con más créditos.`;
 }
 
 function parseRetryDelaySeconds(err: unknown): number {

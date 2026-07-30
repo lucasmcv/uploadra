@@ -83,9 +83,11 @@ export function VideoQAView({ video }: { video: VideoData }) {
       )}
 
       <ol className="flex flex-col gap-3">
-        {video.segments.map((segment) => (
+        {video.segments
+          .filter((segment) => segment.question)
+          .map((segment) => (
           <li key={segment.id} className="border rounded p-3 flex flex-col gap-1">
-            <p className="text-sm font-medium">{segment.question ?? "¿Qué se dice en este fragmento?"}</p>
+            <p className="text-sm font-medium">{segment.question}</p>
             <p className="text-sm text-gray-600">
               {formatTimestamp(segment.startTime)} -{" "}
               {isYoutube ? (
