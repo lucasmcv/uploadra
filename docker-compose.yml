@@ -45,82 +45,6 @@ services:
       mc mb -p local/videos
       "
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  # Proof-of-origin token server for yt-dlp's YouTube extractor — a second,
-  # IP-reputation-independent defense against the "Sign in to confirm
-  # you're not a bot" bot-check, alongside cookies. See worker/README.md.
-  bgutil-pot:
-    image: brainicism/bgutil-ytdlp-pot-provider
-    restart: unless-stopped
-
-  # Thin FastAPI process: accepts POST /transcribe and enqueues a job, does
-  # NOT load Whisper itself. This is what `web` calls over HTTP.
-  worker:
-    build: ./worker
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      REDIS_URL: redis://redis:6379/0
-    ports:
-      - "8001:8001"
-
-  # Runs the actual transcription jobs pulled from the Redis queue — a
-  # separate process (and, on a real deploy, separate replicas) from the
-  # `worker` API above so concurrent uploads no longer contend for one
-  # shared WhisperModel instance the way the old BackgroundTasks dispatch
-  # did. Scale locally with `docker compose up -d --scale worker-rq=3`.
-  worker-rq:
-    build: ./worker
-    restart: unless-stopped
-    command: rq worker transcriptions --url redis://redis:6379/0
-    depends_on:
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      bgutil-pot:
-        condition: service_started
-    environment:
-      WHISPER_MODEL_SIZE: small
-      WHISPER_DEVICE: auto
-      WHISPER_COMPUTE_TYPE: int8
-      MIN_SEGMENT_DURATION: "12"
-      STORAGE_DRIVER: s3
-      S3_ENDPOINT: http://minio:9000
-      S3_BUCKET: videos
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
-      S3_REGION: us-east-1
-      S3_FORCE_PATH_STYLE: "true"
-      REDIS_URL: redis://redis:6379/0
-      BGUTIL_POT_BASE_URL: http://bgutil-pot:4416
-      INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
-      # Optional. YouTube often blocks server IPs with a bot-check even
-      # with a JS runtime present — set this to a path (inside the
-      # container, e.g. /run/secrets/yt-cookies.txt, mounted via an extra
-      # volume line below) pointing to a Netscape-format cookies.txt
-      # exported from a real logged-in browser session if that happens.
-      # See worker/README.md. Empty/unset just means YouTube videos may
-      # fail to transcribe; nothing else in the app depends on this.
-      YT_DLP_COOKIES_FILE: /run/secrets/yt-cookies.txt
-    volumes:
-      - whisper-model-cache:/root/.cache/huggingface
-      # Dedicated YouTube account's exported session cookies (see
-      # worker/README.md) — never committed, lives only on this machine.
-      # Read-write: yt-dlp rewrites this file with refreshed tokens as it
-      # uses them, which keeps the session valid longer.
-      - ./worker/secrets/yt-cookies.txt:/run/secrets/yt-cookies.txt
-
   web:
     build: .
     restart: unless-stopped
@@ -129,10 +53,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      worker:
-        condition: service_started
     environment:
-      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      # Local dev default matches the `postgres` service above; production
+      # overrides this in its own .env with the real deployed credentials
+      # (never hardcode those here — see docs/DEPLOYMENT.md).
+      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       # Auth.js refuses requests against an "untrusted" host in production
       # unless told otherwise — we're not on Vercel (which sets this
@@ -150,17 +75,9 @@ services:
       S3_SECRET_KEY: minioadmin
       S3_REGION: us-east-1
       S3_FORCE_PATH_STYLE: "true"
-      WORKER_URL: http://worker:8001
-      # Used server-side to build the worker's callback URL — must be the
-      # in-network service address, NOT the browser-facing localhost URL
-      # (the worker container calls this directly, it never goes through
-      # the host's port mapping).
-      NEXT_PUBLIC_APP_URL: http://web:3000
       # The browser-facing address — used for Stripe Checkout/Portal
-      # redirects, which NEXT_PUBLIC_APP_URL (above) can't be, since it's
-      # only resolvable inside the Docker network.
+      # redirects.
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
-      INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET:-dev-only-shared-secret-change-me}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
       # Encrypts per-user Gemini API keys (BYOK, see lib/crypto.ts) at
       # rest — any string works, it's hashed to a 32-byte AES key.
@@ -176,4 +93,3 @@ services:
 volumes:
   pgdata:
   miniodata:
-  whisper-model-cache:

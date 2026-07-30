@@ -2,76 +2,59 @@
 
 ## Estado actual
 
-La app corre sobre Postgres real y S3/MinIO (ya migrada desde el modo
-SQLite + disco local que se usó al principio del proyecto para poder
-desarrollar sin Docker Desktop instalado). El stack completo (`postgres`,
-`minio` + `minio-init`, `worker`, `web`) fue levantado y verificado de
-punta a punta con `docker compose up --build`.
+La app corre sobre Postgres real y S3/MinIO. No hay transcripción
+server-side: el usuario pega un link de YouTube o sube un archivo, junto
+con una transcripción con tiempos que él mismo consigue (panel de YouTube
+o TurboScribe) — Gemini solo genera las preguntas a partir de eso. Esto
+significa que el stack ya **no** incluye worker de Whisper, Redis ni cola
+de trabajos: son solo `postgres`, `minio` + `minio-init` y `web`.
+
+En producción (`uploadra.duckdns.org`) corre sobre una VPS de Hetzner con
+Docker Compose + Caddy como reverse proxy/HTTPS (no Fly.io — el `fly.toml`
+en la raíz es un borrador que nunca se usó).
 
 ## Correr todo con Docker Compose
 
 ```bash
-cp .env.example .env   # completar AUTH_SECRET, INTERNAL_CALLBACK_SECRET, GEMINI_API_KEY
+cp .env.example .env   # completar AUTH_SECRET, ENCRYPTION_KEY, GEMINI_API_KEY
 docker compose up -d --build
 ```
 
 Esto levanta: `postgres`, `minio` (+ `minio-init` que crea el bucket
-automáticamente), `redis`, `worker` (API liviana) + `worker-rq` (procesa
-la cola de transcripción) y `web`. La app queda en `http://localhost:3000`.
-
-## Despliegue público (Fly.io) — qué tenés que crear vos
-
-El código y la configuración (`fly.toml`, `worker/fly.toml`) ya están
-preparados. Simplificando respecto a la versión anterior de esta guía:
-Fly.io ofrece Postgres, Redis (vía Upstash, integrado) y storage
-S3-compatible (Tigris) directamente desde su propia plataforma — **no
-hace falta abrir cuenta en AWS ni en Upstash por separado**, todo queda
-bajo una sola cuenta y una sola facturación. Checklist, en orden:
-
-1. **Cuenta de Fly.io** (fly.io/app/sign-up) + método de pago cargado.
-   Instalá el CLI (`flyctl`) y hacé `fly auth login`.
-2. Generá un deploy token (`fly tokens create deploy`) — ese token sí me
-   lo podés pasar como variable de entorno local (mismo patrón que las
-   demás API keys: va en `.env`, nunca en el chat) para que pueda correr
-   los comandos de deploy por vos desde acá.
-3. Una vez con el CLI logueado, estos tres recursos se crean con un
-   comando cada uno (te paso los comandos exactos cuando lleguemos a esa
-   parte — dependen de nombres que se definen en el momento):
-   - Postgres gestionado (`fly postgres create`) → da `DATABASE_URL`.
-   - Redis (`fly redis create`) → da `REDIS_URL`.
-   - Storage S3-compatible / Tigris (`fly storage create`) → da
-     `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (el mismo driver
-     `lib/storage/s3.ts` funciona sin cambios, es API-compatible con S3).
-4. Confirmar en tu dashboard de Stripe que el modo elegido (live, según
-   lo que ya definiste) tiene habilitados los medios de pago que vas a
-   necesitar para usuarios argentinos.
-
-Con la cuenta de Fly.io creada y el deploy token en `.env`, avisame y
-hago el resto: crear los tres recursos (Postgres/Redis/storage), `fly
-launch` de las dos apps (`dictado-web`, `dictado-worker`), `fly secrets
-set` para cada variable, y el primer `fly deploy`.
-
-La primera vez, el contenedor `worker` va a descargar los pesos del modelo
-Whisper configurado (`WHISPER_MODEL_SIZE`, default `small`) — quedan
-cacheados en el volumen `whisper-model-cache` entre reinicios.
+automáticamente) y `web`. La app queda en `http://localhost:3000`.
 
 Para desarrollar contra la infraestructura real pero con `npm run dev` en
 el host (más rápido para iterar que reconstruir la imagen `web` en cada
-cambio), alcanza con levantar la infraestructura y correr el worker aparte:
+cambio):
 
 ```bash
 docker compose up -d postgres minio minio-init
 # .env con DATABASE_URL=postgresql://app:app@localhost:5432/app
 #          STORAGE_DRIVER=s3, S3_ENDPOINT=http://localhost:9000
 npm run dev
-# en otra terminal, worker/README.md para correrlo apuntando a localhost:9000
 ```
 
-## Gotchas ya resueltos (para no repetirlos)
+## Despliegue en un VPS (Hetzner u otro)
 
-Estos problemas aparecieron migrando de SQLite/disco local a
-Postgres/MinIO reales y quedaron corregidos en el código actual — se
-documentan acá por si algo similar reaparece en otro entorno:
+1. Instalar Docker + Docker Compose en el servidor.
+2. Cloná el repo ahí (`git clone`) — el deploy es `git pull` + `docker
+   compose up -d --build web` desde ese checkout, no hay pipeline de CI/CD.
+3. Completá un `.env` en el servidor con las variables reales (nunca
+   commiteado — ver `.env.example` para la lista completa). Notablemente
+   `DATABASE_URL` ahí debe reflejar las credenciales reales de Postgres
+   del servidor si difieren del default local (`app`/`app`) — Postgres
+   solo aplica `POSTGRES_PASSWORD` la primera vez que inicializa un volumen
+   vacío, así que un valor hardcodeado en `docker-compose.yml` puede dejar
+   de coincidir con la base real si el volumen ya existía de antes.
+4. Reverse proxy (Caddy, nginx, etc.) para HTTPS: proxyear el dominio
+   público hacia `web:3000` dentro de la red de Docker Compose. En el VPS
+   de Hetzner esto es un `Caddyfile` separado, no versionado en este repo
+   (config específica del servidor).
+5. Correr `npx prisma migrate deploy` (dentro del contenedor `web`, o
+   `docker compose run --rm web npx prisma migrate deploy`) después de
+   cada `git pull` con migraciones nuevas, antes de reconstruir `web`.
+
+## Gotchas ya resueltos (para no repetirlos)
 
 1. **`npm ci` fallaba dentro del contenedor** con
    `Missing: @emnapi/runtime ... from lock file`. El lockfile se generó en
@@ -92,15 +75,7 @@ documentan acá por si algo similar reaparece en otro entorno:
    automáticamente), así que hace falta `AUTH_TRUST_HOST=true` explícito
    — ya seteado en el `environment` del servicio `web`.
 
-4. **El callback del worker nunca llegaba** (`NEXT_PUBLIC_APP_URL`
-   apuntaba a `http://localhost:3000`, que desde el contenedor `worker` se
-   resuelve a sí mismo, no al contenedor `web`). Dentro de Compose tiene
-   que ser la dirección de red interna: `http://web:3000`. Ya seteado así
-   en `docker-compose.yml` (fijo, no viene de `.env`, porque siempre debe
-   ser la URL interna sin importar el `NEXT_PUBLIC_APP_URL` público que
-   use el navegador).
-
-5. **El video no reproducía** (`NotSupportedError` en el `<video>`): la
+4. **El video no reproducía** (`NotSupportedError` en el `<video>`): la
    URL prefirmada de MinIO usaba el hostname interno `minio:9000`, que el
    navegador del usuario no puede resolver (solo los contenedores lo
    resuelven entre sí). Solución: `lib/storage/s3.ts` ahora firma las URLs
@@ -108,9 +83,15 @@ documentan acá por si algo similar reaparece en otro entorno:
    (`http://localhost:9000` en Compose), mientras las operaciones
    servidor-a-servidor siguen usando `S3_ENDPOINT` (`http://minio:9000`).
 
-6. **Preguntas no se generaban** (quedaban en `null`): faltaba pasar
+5. **Preguntas no se generaban** (quedaban en `null`): faltaba pasar
    `GEMINI_API_KEY` al contenedor `web` en `docker-compose.yml` — ya
    agregado.
+
+6. **Cuota diaria gratuita de Gemini agotada** (20 requests/día): ver
+   `lib/gemini-retry.ts` — falla rápido en vez de reintentar en vano, y
+   la UI ofrece configurar una clave propia (BYOK, `app/(app)/settings`)
+   como escape hatch. El arreglo real a largo plazo es habilitar
+   facturación (Tier 1) en la cuenta de Gemini de la plataforma.
 
 ## De MinIO a AWS S3 real / de Postgres local a uno gestionado
 
@@ -123,29 +104,9 @@ Sin cambios de código, solo de configuración:
   `S3_FORCE_PATH_STYLE=false`, credenciales de un IAM user/rol con acceso
   al bucket.
 
-## Límites conocidos del MVP
+## Límites conocidos
 
 - Sin compartir videos entre usuarios, sin edición de transcripciones, sin
   notificación por websocket (se usa polling).
-- YouTube bloquea frecuentemente las descargas automatizadas de audio desde
-  IPs de servidor con un error de "bot check" (PO Token), incluso con el
-  runtime de JS (`deno`) incluido en el worker. Cuando pasa, ese video
-  específico falla la transcripción; el resto de la app no se ve afectado.
-  Mitigación documentada en `worker/README.md` (`YT_DLP_COOKIES_FILE`).
-- Si `getStaleFailureMessage` (`lib/processing-watchdog.ts`) no llega a
-  detectar un job colgado a tiempo (ventanas configuradas: 5 min subida,
-  20 min transcripción, 10 min procesamiento de documentos), ese video o
-  documento queda como "en curso" más de lo esperado hasta que el próximo
-  polling lo marque `failed`.
-
-## Concurrencia del worker (Redis + RQ)
-
-Desde que se agregó `redis` + `rq` (ver `worker/README.md`), el worker ya
-**no** procesa una transcripción a la vez: la API (`worker/main.py`) solo
-encola el job, y uno o más procesos `rq worker` (servicio `worker-rq` en
-`docker-compose.yml`) lo toman de la cola y transcriben en paralelo entre
-sí. Cada réplica de `worker-rq` carga su propia instancia de Whisper, así
-que la memoria necesaria crece linealmente con la cantidad de réplicas —
-dimensionar cada una con al menos la misma RAM que ya hizo falta
-localmente (ver más abajo). Escalar réplicas localmente:
-`docker compose up -d --scale worker-rq=3`.
+- La transcripción es 100% manual (el usuario la pega) — no hay descarga
+  ni transcripción automática de audio en el servidor.
