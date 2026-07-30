@@ -37,18 +37,34 @@ npm run dev
 ## Despliegue en un VPS (Hetzner u otro)
 
 1. Instalar Docker + Docker Compose en el servidor.
-2. Cloná el repo ahí (`git clone`) — el deploy es `git pull` + `docker
-   compose up -d --build web` desde ese checkout, no hay pipeline de CI/CD.
+2. Cloná el repo ahí (`git clone`) — el deploy es `git pull` + rebuild
+   desde ese checkout, no hay pipeline de CI/CD:
+   ```bash
+   git pull origin master
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml build web
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web npx prisma migrate deploy
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+   ```
+   Usar siempre los DOS archivos (`-f docker-compose.yml -f
+   docker-compose.prod.yml`) en producción, no solo el primero — el
+   override agrega Caddy (ver punto 4) como servicio gestionado por
+   Compose. Si alguna vez corrés `--remove-orphans` con un solo archivo
+   (o Caddy corriendo por fuera de Compose, como pasó una vez), Compose no
+   lo reconoce como propio y lo borra, tirando abajo el sitio público
+   hasta recrearlo a mano.
 3. Completá un `.env` en el servidor con las variables reales (nunca
    commiteado — ver `.env.example` para la lista completa). Notablemente
-   `DATABASE_URL` ahí debe reflejar las credenciales reales de Postgres
-   del servidor si difieren del default local (`app`/`app`) — Postgres
-   solo aplica `POSTGRES_PASSWORD` la primera vez que inicializa un volumen
-   vacío, así que un valor hardcodeado en `docker-compose.yml` puede dejar
-   de coincidir con la base real si el volumen ya existía de antes.
-4. Reverse proxy (Caddy, nginx, etc.) para HTTPS: proxyear el dominio
-   público hacia `web:3000` dentro de la red de Docker Compose. En el VPS
-   de Hetzner esto es un `Caddyfile` separado, no versionado en este repo
+   `DOCKER_DATABASE_URL` ahí debe reflejar las credenciales reales de
+   Postgres del servidor si difieren del default local (`app`/`app`) —
+   Postgres solo aplica `POSTGRES_PASSWORD` la primera vez que inicializa
+   un volumen vacío, así que un valor hardcodeado en `docker-compose.yml`
+   puede dejar de coincidir con la base real si el volumen ya existía de
+   antes.
+4. Reverse proxy (Caddy) para HTTPS: el `Caddyfile` en la raíz del repo +
+   el servicio `caddy` en `docker-compose.prod.yml` proxyean el dominio
+   público hacia `web:3000` (y `/minio/*` hacia MinIO) dentro de la red de
+   Docker Compose. Sin secretos, así que está versionado normalmente en
+   git — para cambiar de dominio, editar `Caddyfile` directamente.
    (config específica del servidor).
 5. Correr `npx prisma migrate deploy` (dentro del contenedor `web`, o
    `docker compose run --rm web npx prisma migrate deploy`) después de
